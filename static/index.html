@@ -1,0 +1,2507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pump Scanner</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M2 13 L6 8 L9 10 L14 3' fill='none' stroke='%232a78d6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f1f0ec;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --accent: #2a78d6;
+  --accent-wash: rgba(42, 120, 214, 0.10);
+  --peak: #eb6834;
+  --up: #0ca30c;
+  --down: #d03b3b;
+  --good-text: #006300;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #242422;
+    --text: #ffffff;
+    --text-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --accent-wash: rgba(57, 135, 229, 0.14);
+    --peak: #d95926;
+    --good-text: #0ca30c;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #242422;
+  --text: #ffffff;
+  --text-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --accent: #3987e5;
+  --accent-wash: rgba(57, 135, 229, 0.14);
+  --peak: #d95926;
+  --good-text: #0ca30c;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--page);
+  color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+.wrap { max-width: 1480px; margin: 0 auto; padding: 0 24px 48px; }
+
+/* ---------- Header ---------- */
+header {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--page) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.head-inner {
+  max-width: 1480px; margin: 0 auto; padding: 14px 24px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; }
+.brand svg { width: 22px; height: 22px; }
+.meta { color: var(--text-2); font-size: 13px; }
+.spacer { flex: 1; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 34px; padding: 0 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface);
+  cursor: pointer; white-space: nowrap;
+}
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.icon { width: 34px; padding: 0; justify-content: center; }
+.dl { display: flex; align-items: center; gap: 10px; }
+.clock { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+.clock small { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.tzseg button { padding: 4px 9px; }
+.dl-progress { width: 160px; display: none; }
+.dl-progress.on { display: block; }
+.dl-bar { height: 4px; border-radius: 2px; background: var(--grid); overflow: hidden; }
+.dl-bar > div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.dl-text { font-size: 11px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Filters ---------- */
+.filters {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  padding: 18px 0 6px;
+}
+.field { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; }
+.seg {
+  display: inline-flex; padding: 2px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.seg button {
+  border: 0; background: transparent; padding: 4px 10px; border-radius: 6px;
+  cursor: pointer; color: var(--text-2); font-size: 13px;
+}
+.seg button:hover { color: var(--text); }
+.seg button[aria-pressed="true"] {
+  background: var(--surface); color: var(--text); font-weight: 600;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.search {
+  height: 32px; width: 180px; padding: 0 10px 0 30px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface) no-repeat 9px 50%;
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2.2' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='M20 20l-3.5-3.5'/></svg>");
+}
+.search:focus, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.toggle input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+.range-out { min-width: 38px; color: var(--text); font-variant-numeric: tabular-nums; }
+input[type=range] { accent-color: var(--accent); width: 110px; }
+
+/* ---------- Cards ---------- */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: var(--shadow);
+}
+.card-h { padding: 14px 16px 0; display: flex; align-items: baseline; gap: 8px; }
+.card-h h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.card-h .sub { color: var(--muted); font-size: 12px; }
+
+.kpis {
+  display: grid; gap: 12px; margin-top: 12px;
+  grid-template-columns: 1.3fr repeat(5, 1fr);
+}
+.kpi { padding: 14px 16px; min-width: 0; }
+.kpi .label { color: var(--text-2); font-size: 12.5px; }
+.kpi .value { font-size: 26px; font-weight: 650; margin-top: 4px; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi.hero .value { font-size: 48px; line-height: 1.05; }
+.kpi .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.kpi.link { cursor: pointer; }
+.kpi.link:hover { background: var(--surface-2); }
+
+.charts { display: grid; gap: 12px; margin-top: 12px; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.15fr) minmax(0, 1.15fr); }
+.chart-body { padding: 6px 12px 10px; height: 178px; position: relative; }
+.chart-body svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chart-body .bar { fill: var(--accent); }
+.chart-body .hit { fill: transparent; cursor: default; }
+.chart-body .hit:hover + .bar, .chart-body g.col:hover .bar { filter: brightness(1.15); }
+.chart-body .gridline { stroke: var(--grid); stroke-width: 1; }
+.chart-body .baseline { stroke: var(--axis); stroke-width: 1; }
+.chart-body text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* ---------- Main split ---------- */
+.main { display: grid; gap: 12px; margin-top: 12px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: start; }
+.tabs { display: flex; gap: 4px; padding: 10px 12px 0; border-bottom: 1px solid var(--border); }
+.tabs button {
+  border: 0; background: none; cursor: pointer; padding: 8px 10px 10px;
+  color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500;
+}
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.tabs .count { color: var(--muted); font-weight: 400; margin-left: 4px; font-variant-numeric: tabular-nums; }
+
+.table-scroll { max-height: calc(100vh - 210px); min-height: 420px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface);
+  text-align: right; font-weight: 500; color: var(--text-2); font-size: 12px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+thead th:first-child, tbody td:first-child { text-align: left; }
+thead th:hover { color: var(--text); }
+thead th .arrow { display: inline-block; width: 10px; color: var(--accent); }
+tbody td { padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; white-space: nowrap; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--surface-2); }
+tbody tr.sel { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--accent); }
+.sym { font-weight: 600; }
+.sym .q { color: var(--muted); font-weight: 400; }
+.gain { color: var(--good-text); font-weight: 600; }
+.dim { color: var(--muted); }
+.badge {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 500; line-height: 17px; vertical-align: 1px;
+  color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border);
+}
+.empty { padding: 48px 16px; text-align: center; color: var(--muted); }
+
+/* ---------- Detail / candle chart ---------- */
+.detail { position: sticky; top: 76px; }
+.detail-h { padding: 14px 16px 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.detail-h .title { font-size: 18px; font-weight: 650; }
+.detail-h .title .q { color: var(--muted); font-weight: 400; }
+.detail-h .pill { font-size: 13px; color: var(--good-text); font-weight: 600; }
+.detail-h .actions { margin-left: auto; display: flex; gap: 6px; }
+.detail-h .btn { height: 30px; font-size: 12.5px; padding: 0 10px; }
+.legend { display: flex; gap: 14px; padding: 8px 16px 0; color: var(--text-2); font-size: 12px; flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.legend i.tri { width: 0; height: 0; border-radius: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; }
+#candles { height: 440px; margin: 4px 4px 0; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--border); }
+.stat { padding: 12px 16px; border-right: 1px solid var(--grid); min-width: 0; }
+.stat:nth-child(4n) { border-right: 0; }
+.stat:nth-child(n+5) { border-top: 1px solid var(--grid); }
+.stat .label { color: var(--muted); font-size: 11.5px; }
+.stat .value { font-size: 15px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat .value small { color: var(--text-2); font-weight: 400; font-size: 12px; }
+.placeholder { height: 560px; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 24px; }
+
+/* ---------- Tooltip ---------- */
+#tip {
+  position: fixed; z-index: 50; pointer-events: none; display: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 10px; font-size: 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  white-space: nowrap;
+}
+#tip strong { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
+#tip span { color: var(--text-2); }
+
+/* ---------- Signals view ---------- */
+:root { --neg: #e34948; --bad-text: #b3261e; }
+:root[data-theme="dark"] { --neg: #e66767; --bad-text: #ff8a80; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --neg: #e66767; --bad-text: #ff8a80; } }
+.nav { margin-left: 8px; }
+.nav button { padding: 5px 14px; font-size: 13.5px; }
+.warn {
+  display: flex; gap: 12px; align-items: flex-start; margin-top: 18px;
+  padding: 12px 16px; border-radius: 10px; font-size: 13.5px; color: var(--text-2);
+  background: color-mix(in srgb, #fab219 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, #fab219 45%, transparent);
+}
+.warn svg { flex: none; color: #c98500; margin-top: 1px; }
+.warn strong { color: var(--text); }
+.sig-toolbar { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.sig-toolbar .dl-text { font-size: 12.5px; }
+.card-h .small { margin-left: auto; font-size: 12.5px; }
+.sig-scroll { max-height: 640px; min-height: 380px; }
+.sig-main { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+#viewAlerts .main { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+.sig-scroll thead th, .sig-scroll tbody td { padding-left: 8px; padding-right: 8px; }
+.sig-scroll .scorebar { width: 44px; }
+.pos { color: var(--good-text); }
+.negt { color: var(--bad-text); }
+.scorecell { display: inline-flex; align-items: center; gap: 8px; }
+.scorebar { width: 64px; height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; }
+.scorebar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.tier { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11.5px; line-height: 19px; border: 1px solid var(--border); color: var(--text-2); }
+.tier.t1 { background: var(--accent); color: #fff; border-color: transparent; }
+.tier.t2 { background: var(--accent-wash); color: var(--text); }
+.charts2 { display: grid; gap: 12px; margin-top: 12px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.chart-body.tall { height: 380px; }
+.chart-body .bar.neg { fill: var(--neg); }
+.chart-body .bar.muted { fill: var(--muted); }
+.chart-body .refline { stroke: var(--text-2); stroke-width: 1; }
+.chart-body text.reflabel { fill: var(--text-2); }
+.explain { margin: 0; padding: 0 16px 14px; color: var(--text-2); font-size: 12.5px; }
+.hbar { padding: 8px 12px 12px; }
+.hbar svg { display: block; width: 100%; overflow: visible; }
+.hbar .row { cursor: pointer; }
+.hbar .row:hover .rowbg { fill: var(--surface-2); }
+.hbar .row.sel .rowbg { fill: var(--accent-wash); }
+.hbar .rowbg { fill: transparent; }
+.hbar .bar { fill: var(--accent); }
+.hbar .row.weak .bar { fill: var(--muted); }
+.hbar text { font-size: 12px; fill: var(--text-2); }
+.hbar .row.sel text.lab { fill: var(--text); font-weight: 600; }
+.hbar text.val { fill: var(--text); font-variant-numeric: tabular-nums; }
+.hbar .refline { stroke: var(--text-2); stroke-width: 1; }
+.hbar .gridline { stroke: var(--grid); }
+.sim { margin-top: 12px; }
+.sim-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 12px 16px 16px; }
+.sim-grid h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.sim-grid h3 span { color: var(--muted); font-weight: 400; }
+.sim-grid table { font-size: 12.5px; table-layout: fixed; }
+.sim-grid th { padding: 6px 4px; font-weight: 500; color: var(--text-2); font-size: 11.5px; text-align: center; border-bottom: 0; position: static; cursor: default; background: none; }
+.sim-grid th:first-child { text-align: left; }
+.sim-grid td { padding: 0; border: 2px solid var(--surface); text-align: center; }
+.sim-grid td.rowh { text-align: left; color: var(--text-2); font-size: 11.5px; padding-left: 4px; background: none; }
+.sim-cell { padding: 8px 4px; border-radius: 6px; cursor: default; }
+.sim-cell b { display: block; font-size: 14px; font-variant-numeric: tabular-nums; }
+.sim-cell small { color: var(--text-2); font-size: 11px; }
+.sim-grid tbody tr { cursor: default; }
+.sim-grid tbody tr:hover { background: none; }
+.method { color: var(--muted); font-size: 12.5px; margin: 16px 2px 0; max-width: 980px; }
+@media (max-width: 1000px) {
+  .charts2, .sim-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- Indicators / alerts ---------- */
+/* EMA 9/21/50 = three hues validated all-pairs for CVD; EMA 200 = neutral ink baseline */
+:root { --ema9: #eda100; --ema21: #e87ba4; --ema50: #4a3aa7; --ema200: #52514e; }
+:root[data-theme="dark"] { --ema9: #c98500; --ema21: #d55181; --ema50: #9085e9; --ema200: #c3c2b7; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ema9: #c98500; --ema21: #d55181; --ema50: #9085e9; --ema200: #c3c2b7; } }
+.legend i.line { width: 14px; height: 2px; border-radius: 1px; }
+.legend i.dotk { width: 9px; height: 9px; border-radius: 50%; }
+.small-t { font-size: 12.5px; margin-right: 4px; }
+.macd-wrap { border-top: 1px solid var(--grid); }
+.macd-legend { padding-top: 6px; }
+.macd-legend b { font-weight: 600; color: var(--text); font-size: 11.5px; }
+#macd { height: 120px; margin: 0 4px; }
+.no-ind .lg-ind, .no-ind .lg-ind-block { display: none; }
+.view-pumps .lg-alerts, .view-signals .lg-alerts, .view-alerts .lg-pumps, .view-trend .lg-alerts, .view-trend .lg-pumps { display: none; }
+.nav-count {
+  display: inline-block; min-width: 18px; height: 18px; line-height: 18px; margin-left: 6px; padding: 0 5px;
+  border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; text-align: center;
+}
+.alert-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+.live-pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border); font-weight: 600; font-size: 13px;
+}
+.live-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.live-pill.on .dot { background: var(--up); box-shadow: 0 0 0 0 color-mix(in srgb, var(--up) 60%, transparent); animation: pulse 2s infinite; }
+.live-pill.busy .dot { background: #fab219; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .live-pill.on .dot { animation: none; } }
+#viewAlerts .filters { padding-top: 12px; }
+#viewAlerts .warn { margin-top: 8px; }
+.setup-b { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11.5px; line-height: 19px; border: 1px solid var(--border); color: var(--text); }
+.setup-b.trend { background: var(--accent-wash); }
+.risk-b { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 17px;
+  color: var(--bad-text); border: 1px solid color-mix(in srgb, var(--bad-text) 45%, transparent); }
+.setup-b.ignition { background: color-mix(in srgb, var(--peak) 16%, transparent); }
+.new-b { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 17px; background: var(--accent); color: #fff; font-weight: 600; }
+tr.fresh { animation: flash 2.4s ease-out 1; }
+@keyframes flash { from { background: var(--accent-wash); } to { background: transparent; } }
+.check { color: var(--good-text); font-weight: 600; }
+.warn.info { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.warn.info svg { color: var(--accent); }
+.eq-card { margin-top: 12px; }
+.fut { border-top: 1px solid var(--border); }
+.fut-h { display: flex; align-items: baseline; gap: 8px; padding: 10px 16px 0; font-size: 13px; }
+.fut-h .sub { color: var(--muted); font-size: 12px; }
+.fut .stats { border-top: 0; }
+.fut .explain { padding-top: 0; }
+#eqChart { height: 340px; margin: 4px 8px 0; }
+.periods { padding: 8px 16px 16px; overflow-x: auto; }
+.periods table { font-size: 12.5px; table-layout: fixed; min-width: 560px; }
+.periods th { padding: 6px 4px; font-weight: 500; color: var(--text-2); font-size: 11.5px; text-align: center; border-bottom: 0; position: static; cursor: default; background: none; }
+.periods th:first-child { text-align: left; }
+.periods td { padding: 0; border: 2px solid var(--surface); text-align: center; }
+.periods td.rowh { text-align: left; color: var(--text-2); font-size: 12px; padding-left: 4px; }
+.periods tbody tr { cursor: default; }
+.periods tbody tr:hover { background: none; }
+.st { display: inline-block; min-width: 16px; margin-left: 6px; font-weight: 700; text-align: center; }
+.st.ok { color: var(--good-text); }
+.st.bad { color: var(--bad-text); }
+.st.wait { color: var(--muted); font-weight: 400; }
+
+.loading .kpis, .loading .charts, .loading .main { opacity: .5; transition: opacity .2s; pointer-events: none; }
+.notice { margin-top: 16px; padding: 14px 16px; border-radius: 10px; background: var(--surface-2); color: var(--text-2); display: none; }
+.notice.on { display: block; }
+
+@media (max-width: 1200px) {
+  .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .charts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .charts .card:first-child { grid-column: 1 / -1; }
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .detail { position: static; order: -1; }
+  .table-scroll { max-height: 640px; }
+}
+@media (max-width: 640px) {
+  .wrap, .head-inner { padding-left: 16px; padding-right: 16px; }
+  .kpis { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .kpi.hero { grid-column: 1 / -1; }
+  .charts { grid-template-columns: minmax(0, 1fr); }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stat:nth-child(2n) { border-right: 0; }
+  .stat:nth-child(n+3) { border-top: 1px solid var(--grid); }
+  #candles { height: 340px; }
+  .search { width: 100%; }
+  .dl-progress { width: 110px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-inner">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19 L9 12 L13 15 L21 5"/><path d="M15 5 H21 V11"/></svg>
+      Pump Scanner
+    </div>
+    <nav class="seg nav" id="nav" aria-label="View">
+      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="bybit">Bybit</button><button data-view="trend">Trend</button>
+    </nav>
+    <div class="meta" id="meta">Loading…</div>
+    <div class="spacer"></div>
+    <div class="dl">
+      <div class="dl-progress" id="dlProgress">
+        <div class="dl-bar"><div id="dlBar"></div></div>
+        <div class="dl-text" id="dlText"></div>
+      </div>
+      <button class="btn primary" id="dlBtn" title="Fetch the latest 15m candles from Binance">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        Update data
+      </button>
+      <span class="clock" id="clock" title="Current time in the selected time zone"></span>
+      <div class="seg tzseg" id="tzSeg" aria-label="Time zone">
+        <button data-v="local" id="tzLocalBtn">Local</button><button data-v="utc">UTC</button>
+      </div>
+      <button class="btn icon" id="themeBtn" title="Toggle light/dark" aria-label="Toggle theme">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap" id="app">
+ <div id="viewPumps">
+  <div class="filters" role="toolbar" aria-label="Filters">
+    <div class="field">Period
+      <div class="seg" id="fPeriod">
+        <button data-v="all">All</button><button data-v="30">30d</button><button data-v="14">14d</button><button data-v="7">7d</button>
+      </div>
+    </div>
+    <div class="field">Gain ≥
+      <div class="seg" id="fThreshold">
+        <button data-v="0.2">20%</button><button data-v="0.3">30%</button><button data-v="0.5">50%</button><button data-v="1">100%</button>
+      </div>
+    </div>
+    <div class="field">within
+      <div class="seg" id="fWindow">
+        <button data-v="4">4h</button><button data-v="12">12h</button><button data-v="24">24h</button><button data-v="48">48h</button>
+      </div>
+    </div>
+    <label class="field">Min gain
+      <input type="range" id="fMin" min="0" max="300" step="5" value="0">
+      <span class="range-out" id="fMinOut">—</span>
+    </label>
+    <label class="toggle field"><input type="checkbox" id="fWicks"> Hide wick-only</label>
+    <input class="search" id="fSearch" type="search" placeholder="Search coin…" autocomplete="off" spellcheck="false">
+  </div>
+
+  <div class="notice" id="notice"></div>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="charts">
+    <div class="card">
+      <div class="card-h"><h2>Pump events per day</h2><span class="sub">by entry date, <span class="tzl"></span></span></div>
+      <div class="chart-body" id="chDaily"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Gain distribution</h2><span class="sub">max gain per event</span></div>
+      <div class="chart-body" id="chGain"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Start hour</h2><span class="sub">entry candle, <span class="tzl"></span></span></div>
+      <div class="chart-body" id="chHour"></div>
+    </div>
+  </section>
+
+  <section class="main">
+    <div class="card">
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="events" aria-selected="true">Events<span class="count" id="cntEvents"></span></button>
+        <button role="tab" data-tab="coins" aria-selected="false">Coins<span class="count" id="cntCoins"></span></button>
+      </div>
+      <div class="table-scroll" id="tableScroll">
+        <table>
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card detail" id="detail">
+      <div class="placeholder" id="placeholder">Select an event or coin to see its chart.<br>Use ↑ ↓ to step through the list.</div>
+      <div id="detailBody" hidden>
+        <div class="detail-h">
+          <div class="title" id="dTitle"></div>
+          <div class="pill" id="dPill"></div>
+          <div class="actions">
+            <label class="toggle field small-t"><input type="checkbox" id="indChk" checked> EMA / MACD</label>
+            <button class="btn" id="dFocus">Zoom to event</button>
+            <button class="btn" id="dAll">Full history</button>
+            <a class="btn" id="dBinance" target="_blank" rel="noopener noreferrer">Binance ↗</a>
+          </div>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--up)"></i>Up candle</span>
+          <span><i style="background:var(--down)"></i>Down candle</span>
+          <span class="lg-pumps"><i class="tri" style="border-bottom:9px solid var(--accent)"></i>Entry (local low)</span>
+          <span class="lg-pumps lg-sig"><i class="tri" style="border-top:9px solid var(--peak)"></i>Peak</span>
+          <span class="lg-pumps"><i style="background:var(--muted);height:2px;width:14px"></i>Entry / +target price</span>
+          <span class="lg-alerts"><i class="dotk" style="background:var(--accent)"></i>Alert candle</span>
+          <span class="lg-ind"><i class="line" style="background:var(--ema9)"></i><span id="lgEma0">EMA 9</span></span>
+          <span class="lg-ind"><i class="line" style="background:var(--ema21)"></i><span id="lgEma1">EMA 21</span></span>
+          <span class="lg-ind"><i class="line" style="background:var(--ema50)"></i><span id="lgEma2">EMA 50</span></span>
+          <span class="lg-ind"><i class="line" style="background:var(--ema200);height:3px"></i><span id="lgEma3">EMA 200</span></span>
+        </div>
+        <div id="candles"></div>
+        <div class="macd-wrap lg-ind-block">
+          <div class="legend macd-legend">
+            <span><b>MACD 12/26/9</b></span>
+            <span><i class="line" style="background:var(--accent)"></i>MACD</span>
+            <span><i class="line" style="background:var(--peak)"></i>Signal</span>
+            <span><i style="background:var(--up)"></i><i style="background:var(--down);margin-left:-4px"></i>Histogram</span>
+          </div>
+          <div id="macd"></div>
+        </div>
+        <div class="stats" id="dStats"></div>
+        <div class="fut" id="dFut" hidden>
+          <div class="fut-h"><b>Futures context</b><span class="sub" id="dFutSub"></span></div>
+          <div class="stats" id="dFutStats"></div>
+          <p class="explain" id="dFutNote"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+ </div>
+
+ <div id="viewSignals" hidden>
+  <div class="warn" role="note">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+    <div><strong>Volatility watchlist, not buy signals.</strong>
+      On four weeks of data the model never saw, flagged coins touched +30% far more often than average, but were just as likely to fall.
+      After fees, trading them did no better than buying random coins. This is a research tool, not financial advice.</div>
+  </div>
+
+  <div class="sig-toolbar">
+    <div class="meta" id="sigMeta"></div>
+    <div class="spacer"></div>
+    <span class="dl-text" id="trainText"></span>
+    <button class="btn" id="trainBtn" title="Rebuild indicators from the CSVs on disk and retrain (about 2 minutes)">Retrain model</button>
+  </div>
+
+  <div class="notice" id="sigNotice"></div>
+
+  <section class="kpis" id="sigKpis"></section>
+
+  <section class="main sig-main">
+    <div class="card">
+      <div class="card-h"><h2>Live watchlist</h2><span class="sub" id="sigSub"></span>
+        <label class="toggle field small"><input type="checkbox" id="sigAll"> Show all pairs</label>
+      </div>
+      <div class="table-scroll sig-scroll">
+        <table>
+          <thead id="sigHead"></thead>
+          <tbody id="sigBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="sigDetailSlot"></div>
+  </section>
+
+  <section class="charts2">
+    <div class="card">
+      <div class="card-h"><h2>Indicator strength</h2><span class="sub">pump rate in its best decile vs. average · click one</span></div>
+      <div class="hbar" id="chLift"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2 id="decTitle">Pump rate by decile</h2><span class="sub" id="decSub"></span></div>
+      <div class="chart-body tall" id="chDecile"></div>
+      <p class="explain" id="decExplain"></p>
+    </div>
+  </section>
+
+  <section class="charts2">
+    <div class="card">
+      <div class="card-h"><h2>Hit rate by signal tier</h2><span class="sub">touched +30% within 24h · test period</span></div>
+      <div class="chart-body" id="chTierHit"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Median return 24h after the signal</h2><span class="sub">what simply holding gave · test period</span></div>
+      <div class="chart-body" id="chTierRet"></div>
+    </div>
+  </section>
+
+  <section class="card sim">
+    <div class="card-h"><h2>Trading simulation</h2><span class="sub">enter at the signal candle's close · exit at take-profit, stop-loss or after 24h · 0.1% fee per side</span></div>
+    <div class="sim-grid" id="simGrid"></div>
+  </section>
+
+  <p class="method" id="sigMethod"></p>
+ </div>
+
+ <div id="viewAlerts" hidden>
+  <div class="alert-bar">
+    <div class="live-pill" id="livePill"><span class="dot"></span><span id="liveText">Live</span></div>
+    <span class="meta" id="liveMeta"></span>
+    <div class="spacer"></div>
+    <button class="btn" id="liveToggle">Pause</button>
+    <div class="field">Notify on
+      <div class="seg" id="aNotify"><button data-v="alert">Every alert</button><button data-v="confirm">1h confirmation</button></div>
+    </div>
+    <button class="btn" id="notifBtn">Enable notifications</button>
+    <label class="toggle field"><input type="checkbox" id="soundChk"> Sound</label>
+  </div>
+
+  <div class="filters" role="toolbar" aria-label="Alert filters">
+    <div class="field">Setup
+      <div class="seg" id="aSetup"><button data-v="all">All</button><button data-v="trend">Trend</button><button data-v="ignition">Ignition</button></div>
+    </div>
+    <div class="field">Period
+      <div class="seg" id="aPeriod"><button data-v="6">6h</button><button data-v="24">24h</button><button data-v="48">48h</button></div>
+    </div>
+    <div class="field">1h check
+      <div class="seg" id="aStatus"><button data-v="all">All</button><button data-v="confirmed">Confirmed</button><button data-v="pending">Pending</button><button data-v="failed">Failed</button></div>
+    </div>
+    <div class="field">24h volume ≥
+      <div class="seg" id="aVol"><button data-v="0">Any</button><button data-v="1000000">$1M</button><button data-v="5000000">$5M</button><button data-v="20000000">$20M</button></div>
+    </div>
+    <input class="search" id="aSearch" type="search" placeholder="Search coin…" autocomplete="off" spellcheck="false">
+  </div>
+
+  <div class="warn" role="note" id="alWarn">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+    <div id="alWarnText"></div>
+  </div>
+
+  <section class="kpis" id="alKpis"></section>
+
+  <section class="main">
+    <div class="card">
+      <div class="card-h"><h2>Alert feed</h2><span class="sub" id="alSub"></span></div>
+      <div class="table-scroll sig-scroll">
+        <table>
+          <thead id="alHead"></thead>
+          <tbody id="alBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="alDetailSlot"></div>
+  </section>
+ </div>
+
+ <div id="viewTrend" hidden>
+  <div class="warn info" role="note">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <div id="trWarnText"></div>
+  </div>
+  <div class="sig-toolbar">
+    <span class="meta" id="trStatus"></span>
+    <div class="spacer"></div>
+    <button class="btn" id="trRefresh" title="Fetch the latest daily candles and rebuild the report">Update now</button>
+  </div>
+  <div class="notice" id="trNotice"></div>
+  <section class="kpis" id="trKpis"></section>
+
+  <section class="main">
+    <div class="card">
+      <div class="card-h"><h2>Daily trend, top coins</h2><span class="sub" id="trSub"></span></div>
+      <div class="table-scroll sig-scroll">
+        <table>
+          <thead id="trHead"></thead>
+          <tbody id="trBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="trDetailSlot"></div>
+  </section>
+
+  <section class="card eq-card">
+    <div class="card-h"><h2>Growth of $1 (log scale)</h2><span class="sub">backtest with fees · hover for values</span></div>
+    <div class="legend" id="eqLegend"></div>
+    <div id="eqChart"></div>
+    <p class="explain" id="eqReadout"></p>
+  </section>
+
+  <section class="card sim">
+    <div class="card-h"><h2>By period</h2><span class="sub">yearly return · worst drop inside the period — does it hold up in good and bad years?</span></div>
+    <div class="periods" id="trPeriods"></div>
+  </section>
+  <p class="method" id="trMethod"></p>
+ </div>
+</div>
+
+<div id="tip" role="tooltip"></div>
+
+<script>
+"use strict";
+// ------------------------------------------------------------------ state
+const state = {
+  threshold: 0.3, window: 24, period: "all", minGain: 0, hideWicks: false, query: "",
+  tab: "events", view: "pumps",
+  sort: { events: { key: "gain", dir: -1 }, coins: { key: "events", dir: -1 } },
+  scan: null, rows: [], selected: null, coin: null,
+};
+const candleCache = new Map();
+const $ = (id) => document.getElementById(id);
+
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  for (const kid of kids) if (kid != null) n.append(kid);
+  return n;
+}
+
+// ------------------------------------------------------------------ formatting
+const fmtPct = (v, d = 1) => (v == null ? "—" : `+${v.toFixed(d)}%`);
+const fmtInt = (v) => v.toLocaleString("en-US");
+function fmtPrice(p) {
+  if (p == null) return "—";
+  if (p >= 1000) return p.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return Number(p.toPrecision(5)).toString();
+}
+function fmtCompact(v) {
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
+  return `$${v.toFixed(0)}`;
+}
+const fmtHours = (h) => (h < 1 ? `${Math.round(h * 60)}m` : `${h.toFixed(h < 10 ? 1 : 0)}h`);
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// ---- Time zone: every displayed time goes through these helpers.
+// "local" uses the browser's own zone (DST-aware per timestamp); "utc" is UTC.
+let tzMode = "local";
+try { if (localStorage.getItem("tzMode") === "utc") tzMode = "utc"; } catch {}
+const tzOff = (t) => (tzMode === "local" ? -new Date(t * 1000).getTimezoneOffset() * 60 : 0);
+const tzDate = (t) => new Date((t + tzOff(t)) * 1000);       // read with getUTC* methods
+const tzDay = (t) => Math.floor((t + tzOff(t)) / 86400);       // calendar day in the chosen zone
+function utcOffsetLabel(t = Date.now() / 1000) {
+  const m = -new Date(t * 1000).getTimezoneOffset();
+  if (!m) return "UTC";
+  const h = Math.floor(Math.abs(m) / 60), mm = Math.abs(m) % 60;
+  return `UTC${m > 0 ? "+" : "−"}${h}${mm ? `:${String(mm).padStart(2, "0")}` : ""}`;
+}
+const tzShort = () => (tzMode === "local" ? utcOffsetLabel() : "UTC");
+
+function utcDay(t) {
+  const d = new Date(t * 1000);
+  return `${MON[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+}
+function fmtDate(t, withTime = true) {
+  const d = tzDate(t);
+  const s = `${MON[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  if (!withTime) return s;
+  return `${s}, ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+const base = (sym) => sym.replace(/USDT$/, "");
+function symNode(sym) {
+  return el("span", { class: "sym" }, base(sym), el("span", { class: "q", text: "/USDT" }));
+}
+const isWick = (e) => e.close_gain == null || e.close_gain < state.threshold * 100;
+
+// ------------------------------------------------------------------ data
+async function loadScan() {
+  $("app").classList.add("loading");
+  try {
+    const r = await fetch(`/api/scan?threshold=${state.threshold}&window=${state.window}`);
+    state.scan = await r.json();
+  } finally {
+    $("app").classList.remove("loading");
+  }
+  const notice = $("notice");
+  if (!state.scan.pairs) {
+    notice.textContent = "No candle data yet. Click “Update data” to download 90 days of 15m candles from Binance (about 3–4 minutes).";
+    notice.classList.add("on");
+  } else notice.classList.remove("on");
+  render();
+  if (state.view !== "pumps") return;
+  if (state.selected) {
+    // Re-resolve the selected event against the new scan
+    const s = state.selected;
+    const match = state.scan.events.find((e) => e.symbol === s.symbol && Math.abs(e.entry_time - s.entry_time) <= state.window * 3600);
+    if (match) selectEvent(match, false); else if (state.coin) showCoin(state.coin);
+  } else if (state.coin) showCoin(state.coin);
+}
+
+function filtered() {
+  const sc = state.scan;
+  if (!sc) return [];
+  const from = state.period === "all" ? -Infinity : sc.end - Number(state.period) * 86400;
+  const q = state.query.trim().toUpperCase();
+  return sc.events.filter((e) =>
+    e.entry_time >= from &&
+    e.gain >= state.minGain &&
+    !(state.hideWicks && isWick(e)) &&
+    (!q || e.symbol.includes(q)));
+}
+
+// Bumped whenever the server appends live candles, so charts refetch
+let dataVersion = 0;
+async function getCandles(symbol, interval = "15m") {
+  const key = `${symbol}|${interval}@${dataVersion}`;
+  if (!candleCache.has(key)) {
+    const url = interval === "1d" ? `/api/daily/${encodeURIComponent(symbol)}` : `/api/candles/${encodeURIComponent(symbol)}`;
+    candleCache.set(key, fetch(url).then((r) => r.json()));
+  }
+  return candleCache.get(key);
+}
+
+// ------------------------------------------------------------------ render
+function render() {
+  const sc = state.scan;
+  const ev = filtered();
+  state.rows = ev;
+  $("meta").textContent = sc.pairs
+    ? `${fmtDate(sc.start, false)} – ${fmtDate(sc.end, false)} · ${fmtInt(sc.pairs)} USDT pairs · ${fmtInt(sc.candles)} candles`
+    : "No data";
+  const tp = Math.round(state.threshold * 100);
+  $("fMinOut").textContent = state.minGain ? `${state.minGain}%` : "—";
+  renderKpis(ev, tp);
+  renderCharts(ev, tp);
+  renderTable();
+}
+
+function kpi(label, value, note, opts = {}) {
+  const n = el("div", { class: `card kpi${opts.hero ? " hero" : ""}${opts.onclick ? " link" : ""}` },
+    el("div", { class: "label", text: label }),
+    el("div", { class: "value", text: value }),
+    el("div", { class: "note", text: note }));
+  if (opts.onclick) { n.addEventListener("click", opts.onclick); n.tabIndex = 0; n.title = "Show on chart"; }
+  return n;
+}
+function median(a) {
+  if (!a.length) return 0;
+  const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function renderKpis(ev, tp) {
+  const box = $("kpis");
+  box.replaceChildren();
+  const coins = new Set(ev.map((e) => e.symbol));
+  const gains = ev.map((e) => e.gain);
+  const speeds = ev.map((e) => e.hours_to_threshold);
+  const wicks = ev.filter(isWick).length;
+  const top = ev.reduce((a, e) => (!a || e.gain > a.gain ? e : a), null);
+  const fast = speeds.filter((h) => h <= 4).length;
+  box.append(
+    kpi("Pump events", fmtInt(ev.length), `${tp}%+ within ${state.window}h · ${fmtInt(state.scan.labeled_candles)} labeled candles`, { hero: true }),
+    kpi("Coins pumped", fmtInt(coins.size), `of ${fmtInt(state.scan.pairs)} pairs (${state.scan.pairs ? Math.round(coins.size / state.scan.pairs * 100) : 0}%)`),
+    kpi("Median gain", ev.length ? `+${median(gains).toFixed(1)}%` : "—", ev.length ? `mean +${(gains.reduce((a, b) => a + b, 0) / ev.length).toFixed(1)}%` : ""),
+    kpi("Biggest pump", top ? `+${Math.round(top.gain)}%` : "—", top ? `${base(top.symbol)} · ${fmtDate(top.entry_time, false)}` : "", top ? { onclick: () => selectEvent(top) } : {}),
+    kpi(`Median time to +${tp}%`, ev.length ? fmtHours(median(speeds)) : "—", ev.length ? `${Math.round(fast / ev.length * 100)}% within 4h` : ""),
+    kpi("Wick-only", ev.length ? `${Math.round(wicks / ev.length * 100)}%` : "—", `${wicks} never closed above +${tp}%`),
+  );
+}
+
+// ---------- SVG column chart (single series, hover tooltips)
+const SVGNS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+function niceMax(v) {
+  if (v <= 0) return 1;
+  if (v <= 4 && Number.isInteger(v)) return Math.max(v, 1);
+  const p = 10 ** Math.floor(Math.log10(v)), f = v / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+function topRounded(x, y, w, h) {
+  const r = Math.min(4, w / 2, h);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+function bottomRounded(x, y, w, h) {
+  const r = Math.min(4, w / 2, h), b = y + h;
+  return `M${x},${y}V${b - r}Q${x},${b} ${x + r},${b}H${x + w - r}Q${x + w},${b} ${x + w},${b - r}V${y}Z`;
+}
+const defaultTick = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+
+// Single-series column chart. Supports negative values (bars hang from the
+// zero line), an optional horizontal reference line, and per-bin classes.
+function columnChart(host, bins, { labelWidth = 40, tip, fmtTick = defaultTick, ref = null, refLabel = "" }) {
+  host.replaceChildren();
+  const W = host.clientWidth - 24, H = host.clientHeight - 16;
+  if (W <= 0 || !bins.length) return;
+  const pad = { l: 36, r: 4, t: 12, b: 20 };
+  const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  // Thin out x labels so they never collide at narrow widths
+  const labelEvery = Math.max(1, Math.ceil(bins.length * labelWidth / iw));
+  const vals = bins.map((b) => b.value);
+  let hi = Math.max(0, ...vals, ref ?? 0), lo = Math.min(0, ...vals);
+  hi = hi > 0 ? niceMax(hi) : 0;
+  lo = lo < 0 ? -niceMax(-lo) : 0;
+  if (hi === lo) hi = 1;
+  const y = (v) => pad.t + ((hi - v) / (hi - lo)) * ih;
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  // With a tiny positive side next to a large negative one, skip its tick so labels don't collide
+  const ticks = lo < 0 ? (hi > (hi - lo) * 0.2 ? [lo, 0, hi] : [lo, lo / 2, 0]) : [0, hi / 2, hi];
+  for (const v of ticks) {
+    s.append(svg("line", { x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v), class: v === 0 ? "baseline" : "gridline" }));
+    const t = svg("text", { x: pad.l - 6, y: y(v) + 3.5, "text-anchor": "end" });
+    t.textContent = fmtTick(v);
+    s.append(t);
+  }
+  const band = iw / bins.length;
+  const bw = Math.max(1, Math.min(24, band - 2));
+  bins.forEach((b, i) => {
+    const x = pad.l + i * band + (band - bw) / 2;
+    const g = svg("g", { class: "col" });
+    g.append(svg("rect", { x: pad.l + i * band, y: pad.t, width: band, height: ih, class: "hit" }));
+    const v = b.value;
+    if (v > 0) g.append(svg("path", { d: topRounded(x, y(v), bw, y(0) - y(v)), class: b.cls || "bar" }));
+    else if (v < 0) g.append(svg("path", { d: bottomRounded(x, y(0), bw, y(v) - y(0)), class: b.cls || "bar neg" }));
+    g.addEventListener("pointermove", (e) => showTip(e, tip(b)));
+    g.addEventListener("pointerleave", hideTip);
+    if (b.onclick) { g.style.cursor = "pointer"; g.addEventListener("click", b.onclick); }
+    s.append(g);
+    if (i % labelEvery === 0) {
+      const t = svg("text", { x: pad.l + i * band + band / 2, y: H - 4, "text-anchor": "middle" });
+      t.textContent = b.label;
+      s.append(t);
+    }
+  });
+  if (ref != null) {
+    s.append(svg("line", { x1: pad.l, x2: W - pad.r, y1: y(ref), y2: y(ref), class: "refline" }));
+    const t = svg("text", { x: W - pad.r, y: y(ref) - 4, "text-anchor": "end", class: "reflabel" });
+    t.textContent = refLabel;
+    s.append(t);
+  }
+  host.append(s);
+}
+
+const tipEl = $("tip");
+function showTip(e, [value, label]) {
+  tipEl.replaceChildren(el("strong", { text: value }), el("span", { text: label }));
+  tipEl.style.display = "block";
+  const r = tipEl.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY - r.height - 10;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+  if (y < 8) y = e.clientY + 16;
+  tipEl.style.left = `${x}px`; tipEl.style.top = `${y}px`;
+}
+function hideTip() { tipEl.style.display = "none"; }
+
+function renderCharts(ev, tp) {
+  const sc = state.scan;
+  // Daily
+  const daily = [];
+  if (sc.start) {
+    const day0 = tzDay(state.period === "all" ? sc.start : sc.end - Number(state.period) * 86400);
+    const day1 = tzDay(sc.end);
+    const counts = new Map();
+    for (const e of ev) { const d = tzDay(e.entry_time); counts.set(d, (counts.get(d) || 0) + 1); }
+    for (let d = day0; d <= day1; d++) {
+      const dd = new Date(d * 86400000);
+      const lab = `${MON[dd.getUTCMonth()]} ${dd.getUTCDate()}`;
+      daily.push({ label: lab, value: counts.get(d) || 0, day: d });
+    }
+  }
+  columnChart($("chDaily"), daily, {
+    labelWidth: 58,
+    tip: (b) => [`${b.value} event${b.value === 1 ? "" : "s"}`, `${b.label} (${tzShort()})`],
+  });
+
+  // Gain distribution — buckets start at the active threshold
+  const edges = [tp, ...[50, 75, 100, 200, 500].filter((x) => x > tp), Infinity];
+  const gb = edges.slice(0, -1).map((lo, i) => {
+    const hi = edges[i + 1];
+    return { label: hi === Infinity ? `${lo}%+` : `${lo}–${hi}`, lo, hi, value: ev.filter((e) => e.gain >= lo && e.gain < hi).length };
+  });
+  columnChart($("chGain"), gb, {
+    labelWidth: 44,
+    tip: (b) => [`${b.value} events`, b.hi === Infinity ? `gain ≥ ${b.lo}%` : `gain ${b.lo}–${b.hi}%`],
+  });
+
+  // Hour of day
+  const hours = Array.from({ length: 24 }, (_, h) => ({ label: String(h).padStart(2, "0"), value: 0, h }));
+  for (const e of ev) hours[tzDate(e.entry_time).getUTCHours()].value++;
+  columnChart($("chHour"), hours, {
+    labelWidth: 26,
+    tip: (b) => [`${b.value} events`, `${b.label}:00–${b.label}:59 ${tzShort()}`],
+  });
+}
+
+// ---------- Table
+const EVENT_COLS = [
+  { key: "symbol", label: "Coin", cell: (e) => { const n = symNode(e.symbol); if (isWick(e)) n.append(el("span", { class: "badge", text: "wick", title: "Never closed above the threshold — spike within a candle" })); return n; } },
+  { key: "entry_time", label: () => `Entry (${tzShort()})`, cell: (e) => fmtDate(e.entry_time) },
+  { key: "gain", label: "Max gain", cell: (e) => el("span", { class: "gain", text: fmtPct(e.gain) }) },
+  { key: "close_gain", label: "On closes", cell: (e) => fmtPct(e.close_gain) },
+  { key: "hours_to_threshold", label: "To target", cell: (e) => fmtHours(e.hours_to_threshold) },
+  { key: "hours_to_peak", label: "To peak", cell: (e) => fmtHours(e.hours_to_peak) },
+  { key: "volume_before", label: "Vol 24h before", cell: (e) => el("span", { class: "dim", text: fmtCompact(e.volume_before) }) },
+];
+const COIN_COLS = [
+  { key: "symbol", label: "Coin", cell: (c) => symNode(c.symbol) },
+  { key: "events", label: "Events", cell: (c) => String(c.events) },
+  { key: "best", label: "Best gain", cell: (c) => el("span", { class: "gain", text: fmtPct(c.best) }) },
+  { key: "median", label: "Median gain", cell: (c) => fmtPct(c.median) },
+  { key: "last", label: () => `Last pump (${tzShort()})`, cell: (c) => fmtDate(c.last) },
+];
+
+function coinRows(ev) {
+  const m = new Map();
+  for (const e of ev) {
+    if (!m.has(e.symbol)) m.set(e.symbol, []);
+    m.get(e.symbol).push(e);
+  }
+  return [...m].map(([symbol, list]) => ({
+    symbol, events: list.length,
+    best: Math.max(...list.map((e) => e.gain)),
+    median: median(list.map((e) => e.gain)),
+    last: Math.max(...list.map((e) => e.entry_time)),
+  }));
+}
+
+function sortRows(rows, { key, dir }) {
+  return [...rows].sort((a, b) => {
+    const x = a[key], y = b[key];
+    if (typeof x === "string") return dir * x.localeCompare(y);
+    return dir * ((x ?? -Infinity) - (y ?? -Infinity));
+  });
+}
+
+let visibleRows = [];
+function renderTable() {
+  const isEvents = state.tab === "events";
+  const cols = isEvents ? EVENT_COLS : COIN_COLS;
+  const sort = state.sort[state.tab];
+  const coins = coinRows(state.rows);
+  $("cntEvents").textContent = fmtInt(state.rows.length);
+  $("cntCoins").textContent = fmtInt(coins.length);
+  visibleRows = sortRows(isEvents ? state.rows : coins, sort);
+
+  const tr = el("tr");
+  for (const c of cols) {
+    const active = sort.key === c.key;
+    const th = el("th", { "aria-sort": active ? (sort.dir > 0 ? "ascending" : "descending") : "none" },
+      (typeof c.label === "function" ? c.label() : c.label), el("span", { class: "arrow", text: active ? (sort.dir > 0 ? "↑" : "↓") : "" }));
+    th.addEventListener("click", () => {
+      state.sort[state.tab] = { key: c.key, dir: active ? -sort.dir : (c.key === "symbol" ? 1 : -1) };
+      renderTable();
+    });
+    tr.append(th);
+  }
+  $("thead").replaceChildren(tr);
+
+  const body = $("tbody");
+  if (!visibleRows.length) {
+    body.replaceChildren(el("tr", {}, el("td", { colspan: cols.length, class: "empty", text: "No events match these filters." })));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  visibleRows.forEach((r, i) => {
+    const row = el("tr", { "data-i": i });
+    if (isSelected(r)) row.classList.add("sel");
+    for (const c of cols) {
+      const v = c.cell(r);
+      row.append(el("td", {}, v));
+    }
+    row.addEventListener("click", () => activate(r));
+    frag.append(row);
+  });
+  body.replaceChildren(frag);
+}
+function isSelected(r) {
+  if (state.tab === "events") return state.selected && r.symbol === state.selected.symbol && r.entry_time === state.selected.entry_time;
+  return state.coin === r.symbol;
+}
+function activate(r) {
+  if (state.tab === "events") selectEvent(r); else showCoin(r.symbol);
+}
+function markSelected() {
+  const rows = $("tbody").children;
+  let selRow = null;
+  for (const row of rows) {
+    const r = visibleRows[row.dataset.i];
+    const on = r && isSelected(r);
+    row.classList.toggle("sel", !!on);
+    if (on) selRow = row;
+  }
+  return selRow;
+}
+
+// ------------------------------------------------------------------ candle chart
+let chart = null, candleSeries = null, volSeries = null, priceLines = [];
+let macdChart = null, emaSeries = {}, macdLine = null, macdSignal = null, macdHist = null;
+// Four EMA slots (colours --ema9/--ema21/--ema50/--ema200); daily charts use 20 to match the trend rule
+const EMA_SLOTS = ["ema9", "ema21", "ema50", "ema200"];
+let chartInterval = "15m";
+const emaPeriods = () => (chartInterval === "1d" ? [9, 20, 50, 200] : [9, 21, 50, 200]);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+function chartTheme() {
+  return {
+    layout: { background: { type: "solid", color: css("--surface") }, textColor: css("--text-2"), fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif", fontSize: 11 },
+    grid: { vertLines: { color: css("--grid") }, horzLines: { color: css("--grid") } },
+    rightPriceScale: { borderColor: css("--axis"), minimumWidth: 78 },
+    // 90 days of 15m candles is 8,640 bars — allow them to squeeze into one view
+    timeScale: { borderColor: css("--axis"), timeVisible: true, secondsVisible: false, rightOffset: 4, minBarSpacing: 0.02,
+      // 0 year · 1 month · 2 day · 3 time · 4 time with seconds
+      tickMarkFormatter: (t, type) => {
+        const d = chartInterval === "1d" ? new Date(t * 1000) : tzDate(t), hm = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+        return type === 0 ? String(d.getUTCFullYear()) : type === 1 ? MON[d.getUTCMonth()] : type === 2 ? String(d.getUTCDate()) : hm;
+      } },
+    localization: { timeFormatter: (t) => (chartInterval === "1d" ? utcDay(t) : `${fmtDate(t)} ${tzShort()}`) },
+    crosshair: { mode: 0, vertLine: { color: css("--muted"), labelBackgroundColor: css("--text-2") }, horzLine: { color: css("--muted"), labelBackgroundColor: css("--text-2") } },
+  };
+}
+function ensureChart() {
+  if (chart) return;
+  chart = LightweightCharts.createChart($("candles"), { autoSize: true, ...chartTheme() });
+  candleSeries = chart.addCandlestickSeries({
+    upColor: css("--up"), downColor: css("--down"), borderVisible: false,
+    wickUpColor: css("--up"), wickDownColor: css("--down"),
+  });
+  volSeries = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol", lastValueVisible: false, priceLineVisible: false });
+  chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  EMA_SLOTS.forEach((_, i) => {
+    emaSeries[i] = chart.addLineSeries({ lineWidth: i === 3 ? 2 : 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  });
+
+  // MACD lives in its own small chart below, kept in lockstep with the candles
+  macdChart = LightweightCharts.createChart($("macd"), { autoSize: true, ...chartTheme(), timeScale: { visible: false }, handleScroll: true, handleScale: true });
+  macdHist = macdChart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false, priceFormat: { type: "price", precision: 6, minMove: 1e-6 } });
+  macdLine = macdChart.addLineSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: { type: "price", precision: 6, minMove: 1e-6 } });
+  macdSignal = macdChart.addLineSeries({ lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, priceFormat: { type: "price", precision: 6, minMove: 1e-6 } });
+  let syncing = false;
+  const link = (from, to) => from.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+    if (!r || syncing) return;
+    syncing = true;
+    to.timeScale().setVisibleLogicalRange(r);
+    syncing = false;
+  });
+  link(chart, macdChart);
+  link(macdChart, chart);
+  applyIndicatorColors();
+}
+
+function applyIndicatorColors() {
+  if (!chart) return;
+  EMA_SLOTS.forEach((slot, i) => emaSeries[i].applyOptions({ color: css(`--${slot}`) }));
+  macdLine.applyOptions({ color: css("--accent") });
+  macdSignal.applyOptions({ color: css("--peak") });
+  macdChart.applyOptions({ ...chartTheme(), timeScale: { visible: false } });
+}
+
+function hexAlpha(hex, a) {
+  const h = hex.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map((x) => x + x).join("") : h, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+function emaArr(vals, n) {
+  // Same as pandas ewm(span=n, adjust=False, min_periods=n), which the alert rules use
+  const k = 2 / (n + 1), out = new Array(vals.length);
+  let e = null;
+  for (let i = 0; i < vals.length; i++) {
+    e = e == null ? vals[i] : vals[i] * k + e * (1 - k);
+    out[i] = i >= n - 1 ? e : null;
+  }
+  return out;
+}
+
+function setIndicators(data) {
+  const show = $("indChk").checked;
+  EMA_SLOTS.forEach((_, i) => emaSeries[i].applyOptions({ visible: show }));
+  emaPeriods().forEach((n, i) => { $(`lgEma${i}`).textContent = `EMA ${n}`; });
+  if (!show) return;
+  emaPeriods().forEach((n, k) => {
+    const e = emaArr(data.c, n);
+    emaSeries[k].setData(data.t.map((t, i) => (e[i] == null ? { time: t } : { time: t, value: e[i] })));
+  });
+  const fast = emaArr(data.c, 12), slow = emaArr(data.c, 26);
+  const m = data.c.map((_, i) => (fast[i] == null || slow[i] == null ? null : fast[i] - slow[i]));
+  const firstM = m.findIndex((x) => x != null);
+  const sigTail = emaArr(m.slice(firstM), 9);
+  const sig = m.map((_, i) => (i < firstM ? null : sigTail[i - firstM]));
+  const up = css("--up"), down = css("--down");
+  const wash = (c) => hexAlpha(c, 0.55);
+  macdLine.setData(data.t.map((t, i) => (m[i] == null ? { time: t } : { time: t, value: m[i] })));
+  macdSignal.setData(data.t.map((t, i) => (sig[i] == null ? { time: t } : { time: t, value: sig[i] })));
+  macdHist.setData(data.t.map((t, i) => (sig[i] == null || m[i] == null ? { time: t }
+    : { time: t, value: m[i] - sig[i], color: m[i] - sig[i] >= 0 ? wash(up) : wash(down) })));
+  const p = precisionFor(Math.abs(median(m.filter((x) => x != null).slice(-200))) || 1e-6);
+  for (const sr of [macdLine, macdSignal, macdHist]) sr.applyOptions({ priceFormat: p });
+}
+function precisionFor(p) {
+  const d = p >= 100 ? 2 : p >= 1 ? 4 : Math.min(10, Math.ceil(-Math.log10(p)) + 3);
+  return { type: "price", precision: d, minMove: 10 ** -d };
+}
+
+let currentSymbol = null;
+async function drawSymbol(symbol, interval = "15m") {
+  ensureChart();
+  const data = await getCandles(symbol, interval);
+  const key = `${symbol}|${interval}`;
+  if (currentSymbol !== key) {
+    chartInterval = interval;
+    chart.applyOptions({ timeScale: { timeVisible: interval !== "1d" } });
+    const candles = data.t.map((t, i) => ({ time: t, open: data.o[i], high: data.h[i], low: data.l[i], close: data.c[i] }));
+    candleSeries.setData(candles);
+    candleSeries.applyOptions({ priceFormat: precisionFor(median(data.c.slice(-200))) });
+    const vc = css("--axis");
+    volSeries.setData(data.t.map((t, i) => ({ time: t, value: data.v[i], color: vc })));
+    setIndicators(data);
+    currentSymbol = key;
+  }
+  return data;
+}
+
+function setMarkers(symbol, focus) {
+  const evs = state.scan.events.filter((e) => e.symbol === symbol);
+  const accent = css("--accent"), peak = css("--peak"), muted = css("--muted");
+  const m = [];
+  for (const e of evs) {
+    const on = !focus || (e.entry_time === focus.entry_time);
+    m.push({ time: e.entry_time, position: "belowBar", shape: "arrowUp", color: on ? accent : muted, text: on ? "Entry" : "" });
+    m.push({ time: e.peak_time, position: "aboveBar", shape: "arrowDown", color: on ? peak : muted, text: on ? `+${Math.round(e.gain)}%` : "" });
+  }
+  m.sort((a, b) => a.time - b.time);
+  candleSeries.setMarkers(m);
+
+  for (const pl of priceLines) candleSeries.removePriceLine(pl);
+  priceLines = [];
+  if (focus) {
+    priceLines.push(candleSeries.createPriceLine({ price: focus.entry_price, color: accent, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "entry" }));
+    priceLines.push(candleSeries.createPriceLine({ price: focus.entry_price * (1 + state.threshold), color: muted, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: `+${Math.round(state.threshold * 100)}%` }));
+  }
+}
+
+// The chart sizes itself via ResizeObserver, so a range set before its first
+// layout is dropped — wait two frames first.
+const nextLayout = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+// While the container has no size (background tab, hidden pane) the view is
+// remembered and applied once it is laid out.
+let pendingView = null;
+async function applyView(fn) {
+  pendingView = fn;
+  await nextLayout();
+  if ($("candles").clientWidth && pendingView === fn) { pendingView = null; fn(); }
+}
+new ResizeObserver(() => {
+  if (pendingView && $("candles").clientWidth) {
+    const fn = pendingView; pendingView = null;
+    requestAnimationFrame(() => requestAnimationFrame(fn));
+  }
+}).observe($("candles"));
+
+function zoomTo(e) {
+  const pad = Math.max(12 * 3600, (e.peak_time - e.entry_time));
+  return applyView(() => chart.timeScale().setVisibleRange({ from: e.entry_time - pad, to: e.peak_time + pad }));
+}
+function fitAll() {
+  return applyView(() => chart.timeScale().fitContent());
+}
+
+function showDetail() {
+  $("dBinance").textContent = "Binance ↗";
+  if (state.view !== "alerts" && state.view !== "signals") { futToken++; $("dFut").hidden = true; }
+  $("placeholder").hidden = true;
+  $("detailBody").hidden = false;
+}
+
+async function selectEvent(e, scroll = true) {
+  state.selected = e;
+  state.coin = e.symbol;
+  showDetail();
+  $("dTitle").replaceChildren(base(e.symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = `${fmtPct(e.gain)} in ${fmtHours(e.hours_to_peak)}`;
+  $("dFocus").hidden = false;
+  $("dBinance").href = `https://www.binance.com/en/trade/${encodeURIComponent(base(e.symbol))}_USDT?type=spot`;
+  const tp = Math.round(state.threshold * 100);
+  const stats = [
+    ["Entry", fmtPrice(e.entry_price), fmtDate(e.entry_time)],
+    ["Peak", fmtPrice(e.peak_price), fmtDate(e.peak_time)],
+    ["Max gain (highs)", fmtPct(e.gain), ""],
+    ["Max gain (closes)", fmtPct(e.close_gain), isWick(e) ? "wick only" : ""],
+    [`Time to +${tp}%`, fmtHours(e.hours_to_threshold), ""],
+    ["Time to peak", fmtHours(e.hours_to_peak), ""],
+    ["Volume 24h before", fmtCompact(e.volume_before), ""],
+    ["First signal", fmtDate(e.first_signal), `${e.labeled_candles} labeled candles`],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  const row = markSelected();
+  if (row && scroll) row.scrollIntoView({ block: "nearest" });
+  await drawSymbol(e.symbol);
+  if (state.selected !== e) return;
+  setMarkers(e.symbol, e);
+  zoomTo(e);
+}
+
+async function showCoin(symbol) {
+  state.coin = symbol;
+  state.selected = null;
+  showDetail();
+  const evs = state.scan.events.filter((e) => e.symbol === symbol);
+  $("dTitle").replaceChildren(base(symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = evs.length ? `${evs.length} pump${evs.length === 1 ? "" : "s"} · best ${fmtPct(Math.max(...evs.map((e) => e.gain)))}` : "no pumps";
+  $("dFocus").hidden = true;
+  $("dBinance").href = `https://www.binance.com/en/trade/${encodeURIComponent(base(symbol))}_USDT?type=spot`;
+  const data = await drawSymbol(symbol);
+  if (state.coin !== symbol || state.selected) return;
+  const last = data.c[data.c.length - 1], first = data.c[0];
+  const hi = Math.max(...data.h), lo = Math.min(...data.l);
+  $("dStats").replaceChildren(...[
+    ["Last price", fmtPrice(last), ""],
+    ["Period change", `${last >= first ? "+" : ""}${((last / first - 1) * 100).toFixed(1)}%`, ""],
+    ["Period high", fmtPrice(hi), ""],
+    ["Period low", fmtPrice(lo), ""],
+  ].map(([l, v]) => el("div", { class: "stat" }, el("div", { class: "label", text: l }), el("div", { class: "value", text: v }))));
+  markSelected();
+  setMarkers(symbol, null);
+  fitAll();
+}
+
+$("dFocus").addEventListener("click", () => {
+  if (state.view === "alerts") { if (al.sel) zoomToAlert(al.sel); }
+  else if (state.selected) zoomTo(state.selected);
+});
+$("indChk").addEventListener("change", () => {
+  $("detail").classList.toggle("no-ind", !$("indChk").checked);
+  currentSymbol = null;  // force a redraw with/without indicators
+  refreshDetail();
+});
+$("dAll").addEventListener("click", () => chart && fitAll());
+
+// ------------------------------------------------------------------ controls
+function bindSeg(id, key, parse, onChange) {
+  const box = $(id);
+  const sync = () => box.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(parse(b.dataset.v) === state[key])));
+  box.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    state[key] = parse(b.dataset.v);
+    sync();
+    onChange();
+  });
+  sync();
+}
+bindSeg("fPeriod", "period", (v) => v, render);
+bindSeg("fThreshold", "threshold", Number, loadScan);
+bindSeg("fWindow", "window", Number, loadScan);
+$("fMin").addEventListener("input", (e) => { state.minGain = Number(e.target.value); render(); });
+$("fWicks").addEventListener("change", (e) => { state.hideWicks = e.target.checked; render(); });
+let searchTimer;
+$("fSearch").addEventListener("input", (e) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { state.query = e.target.value; render(); }, 120);
+});
+document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
+  state.tab = b.dataset.tab;
+  document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+  renderTable();
+}));
+
+// Arrow keys step through the table
+document.addEventListener("keydown", (e) => {
+  if (e.target instanceof Element && e.target.matches("input, select, textarea")) return;
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  const step = e.key === "ArrowDown" ? 1 : -1;
+  if (state.view === "trend") {
+    if (!tr.rows.length) return;
+    e.preventDefault();
+    let i = tr.sel ? tr.rows.findIndex((x) => x.symbol === tr.sel.symbol) : -1;
+    i = i < 0 ? 0 : Math.max(0, Math.min(tr.rows.length - 1, i + step));
+    showTrendCoin(tr.rows[i]);
+    return;
+  }
+  if (state.view === "alerts") {
+    if (!al.rows.length) return;
+    e.preventDefault();
+    let i = al.sel ? al.rows.findIndex((a) => a.id === al.sel.id) : -1;
+    i = i < 0 ? 0 : Math.max(0, Math.min(al.rows.length - 1, i + step));
+    showAlert(al.rows[i]);
+    return;
+  }
+  if (state.view === "signals") {
+    if (!sig.rows.length) return;
+    e.preventDefault();
+    let i = sig.sel ? sig.rows.findIndex((r) => r.symbol === sig.sel.symbol) : -1;
+    i = i < 0 ? 0 : Math.max(0, Math.min(sig.rows.length - 1, i + step));
+    showSignalCoin(sig.rows[i]);
+    return;
+  }
+  if (!visibleRows.length) return;
+  e.preventDefault();
+  let i = visibleRows.findIndex(isSelected);
+  i = i < 0 ? 0 : Math.max(0, Math.min(visibleRows.length - 1, i + step));
+  activate(visibleRows[i]);
+});
+
+// Theme
+function applyTheme(t) {
+  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  if (chart) {
+    chart.applyOptions(chartTheme());
+    candleSeries.applyOptions({ upColor: css("--up"), downColor: css("--down"), wickUpColor: css("--up"), wickDownColor: css("--down") });
+    applyIndicatorColors();
+    currentSymbol = null;
+    if (state.view === "signals") renderSigCharts();
+    refreshDetail();
+  }
+}
+try { const t = localStorage.getItem("theme"); if (t) applyTheme(t); } catch {}
+$("themeBtn").addEventListener("click", () => {
+  const dark = getComputedStyle(document.documentElement).colorScheme === "dark";
+  const t = dark ? "light" : "dark";
+  try { localStorage.setItem("theme", t); } catch {}
+  applyTheme(t);
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(document.documentElement.dataset.theme));
+
+// Redraw SVG charts on resize
+let resizeTimer;
+new ResizeObserver(() => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => state.scan && renderCharts(state.rows, Math.round(state.threshold * 100)), 80);
+}).observe($("chDaily"));
+
+// ------------------------------------------------------------------ download
+let pollTimer = null;
+function renderDownload(s) {
+  const on = s.running;
+  $("dlBtn").disabled = on;
+  $("dlProgress").classList.toggle("on", on || !!s.message && Date.now() / 1000 - (s.finished || 0) < 8);
+  const pct = s.total ? (s.done / s.total) * 100 : 0;
+  $("dlBar").style.width = `${on ? pct : 100}%`;
+  $("dlText").textContent = on && s.total ? `${s.done}/${s.total} · ${s.current || ""}` : (s.message || "");
+}
+async function pollDownload() {
+  const s = await (await fetch("/api/download")).json();
+  renderDownload(s);
+  if (s.running) pollTimer = setTimeout(pollDownload, 800);
+  else if (pollTimer) {
+    pollTimer = null;
+    candleCache.clear();
+    currentSymbol = null;
+    await loadScan();
+    if (sig.report !== undefined) await loadSignals();
+    setTimeout(() => renderDownload(s), 8000);
+  }
+}
+$("dlBtn").addEventListener("click", async () => {
+  const r = await fetch("/api/download", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ days: 90 }) });
+  renderDownload(await r.json());
+  pollTimer = setTimeout(pollDownload, 500);
+});
+
+// ------------------------------------------------------------------ signals view
+const SHORT = {
+  ret_1h: "Price change 1h", ret_4h: "Price change 4h", ret_24h: "Price change 24h", ret_7d: "Price change 7d",
+  vol_ratio_1h: "Volume spike 1h", vol_ratio_4h: "Volume spike 4h", vol_ratio_24h: "Volume spike 24h",
+  trades_ratio_4h: "Trade-count spike 4h", taker_buy_4h: "Market-buy share 4h", taker_buy_24h: "Market-buy share 24h",
+  volatility_24h: "Volatility 24h", vol_compression: "Volatility expansion", range_pos_7d: "Position in 7d range",
+  from_7d_high: "Below 7d high", rsi_15m: "RSI 15m", rsi_1h: "RSI 1h", liquidity_24h: "24h volume",
+  past_pumps_30d: "Pumped recently (30d)", btc_ret_4h: "BTC change 4h", btc_ret_24h: "BTC change 24h", hour: "Hour of day (UTC)",
+};
+const sig = { report: undefined, live: null, sel: null, feature: null, showAll: false, sort: { key: "score", dir: -1 }, rows: [] };
+const signed = (v, d = 1) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(d)}%`);
+const pctf = (v, d = 1) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
+
+function fmtFeat(key, v) {
+  if (v == null || Number.isNaN(v)) return "—";
+  if (/^(ret_|btc_ret_)/.test(key) || key === "from_7d_high") return signed(v);
+  if (/ratio|compression/.test(key)) return `${v.toFixed(v < 10 ? 1 : 0)}×`;
+  if (/taker|range_pos|past_pumps|volatility/.test(key)) return pctf(v, v < 0.1 ? 2 : 1);
+  if (key.startsWith("rsi")) return v.toFixed(0);
+  if (key === "liquidity_24h") return fmtCompact(10 ** v);
+  if (key === "hour") return `${String(Math.round(v)).padStart(2, "0")}:00`;
+  return v.toFixed(2);
+}
+const changeNode = (v) => el("span", { class: v == null ? "dim" : v >= 0 ? "pos" : "negt", text: signed(v) });
+
+async function loadSignals() {
+  const notice = $("sigNotice");
+  if (!sig.live) {
+    notice.textContent = "Scoring the latest candle of every pair…";
+    notice.classList.add("on");
+  }
+  const [rep, live] = await Promise.all([
+    fetch("/api/signals/report").then((r) => r.json()),
+    fetch("/api/signals/live").then((r) => r.json()),
+  ]);
+  sig.report = rep;
+  sig.live = live;
+  if (!rep || !live) {
+    notice.textContent = "No signal model yet. Click “Retrain model” to build indicators and train it (about 2 minutes).";
+    notice.classList.add("on");
+    return;
+  }
+  notice.classList.remove("on");
+  if (!sig.feature) sig.feature = rep.indicators[0].feature;
+  renderSignals();
+  if (state.view === "signals") {
+    const keep = sig.sel && live.rows.find((r) => r.symbol === sig.sel.symbol);
+    if (keep) showSignalCoin(keep); else if (sig.rows.length) showSignalCoin(sig.rows[0]);
+  }
+}
+
+function renderSignals() {
+  const rep = sig.report, live = sig.live;
+  if (!rep || !live) return;
+  const t = rep.test, base = t.pump_rate;
+  const lastT = live.rows.length ? Math.max(...live.rows.map((r) => r.time)) : null;
+  $("sigMeta").textContent = lastT
+    ? `Scored on the ${fmtDate(lastT)} (${tzShort()}) candle · model trained ${fmtDate(rep.created, false)}`
+    : "";
+
+  // KPIs
+  const t05 = rep.tiers.find((x) => x.top_pct === 0.5) || rep.tiers[0];
+  const rnd = rep.random_baseline;
+  const flagged = live.rows.filter((r) => r.tier != null);
+  const best = (rows) => rows.reduce((a, x) => (x.mean != null && (!a || x.mean > a.mean) ? x : a), null);
+  const bestSig = best(rep.trading["top 0.5%"] || []), bestRnd = best(rep.trading.random || []);
+  $("sigKpis").replaceChildren(
+    kpi("Flagged now", fmtInt(flagged.length), `${flagged.filter((r) => r.tier <= 1).length} in the top-1% tier · of ${fmtInt(live.rows.length)} pairs`, { hero: true }),
+    kpi("Model accuracy (AUC)", t.auc.toFixed(2), "0.5 = coin flip · 1.0 = perfect"),
+    kpi("Top 0.5% hit rate", pctf(t05.hit_rate), `${Math.round(t05.hit_rate / base)}× the ${pctf(base)} average`),
+    kpi("Median 24h return", signed(t05.median_ret_24h), `after a top-0.5% signal · random ${signed(rnd.median_ret_24h)}`),
+    kpi("Lower 24h later", pctf(t05.share_negative_24h, 0), `of top-0.5% signals · random ${pctf(rnd.share_negative_24h, 0)}`),
+    kpi("Best exit, per trade", bestSig ? signed(bestSig.mean) : "—", bestRnd ? `random entries ${signed(bestRnd.mean)} · after fees` : ""),
+  );
+
+  renderSigTable();
+  renderSigCharts();
+  renderSim();
+
+  const tr = rep.train;
+  $("sigMethod").textContent =
+    `How this was tested: indicators use only data available at each 15-minute candle. The model was trained on ` +
+    `${fmtDate(Date.parse(tr.start) / 1000, false)} – ${fmtDate(Date.parse(tr.end) / 1000, false)} (${fmtInt(tr.rows)} candles) and scored on ` +
+    `${fmtDate(Date.parse(t.start) / 1000, false)} – ${fmtDate(Date.parse(t.end) / 1000, false)}, which it never saw. A tier is the top X% of scores; ` +
+    `a signal is the first candle a coin enters a tier, at most once per coin per 24h. 90 days is a short history from mostly one market mood, so ` +
+    `none of this says much about the future.`;
+}
+
+// ---------- watchlist table
+const SIG_COLS = [
+  { key: "symbol", label: "Coin", cell: (r) => symNode(r.symbol) },
+  { key: "score", label: "Score", cell: (r) => el("span", { class: "scorecell" },
+      el("span", { class: "scorebar" }, el("i", { style: `width:${Math.max(2, (r.score / sig.maxScore) * 100)}%` })),
+      r.score.toFixed(3)) },
+  { key: "tier", label: "Tier", cell: (r) => r.tier == null ? el("span", { class: "dim", text: "—" })
+      : el("span", { class: `tier ${r.tier <= 0.5 ? "t1" : r.tier <= 1 ? "t2" : ""}`, text: `Top ${r.tier}%` }) },
+  { key: "hist_hit_rate", label: "Test hit", cell: (r) => r.hist_hit_rate == null ? el("span", { class: "dim", text: "—" }) : pctf(r.hist_hit_rate, 0) },
+  { key: "ret_4h", label: "4h", cell: (r) => changeNode(r.ret_4h) },
+  { key: "ret_24h", label: "24h", cell: (r) => changeNode(r.ret_24h) },
+  { key: "vol_ratio_4h", label: "Vol 4h", cell: (r) => fmtFeat("vol_ratio_4h", r.vol_ratio_4h) },
+  { key: "liquidity_24h", label: "Vol 24h", cell: (r) => el("span", { class: "dim", text: fmtFeat("liquidity_24h", r.liquidity_24h) }) },
+];
+
+function renderSigTable() {
+  const live = sig.live;
+  const rows = sig.showAll ? live.rows : live.rows.filter((r) => r.tier != null);
+  sig.maxScore = Math.max(1e-9, ...live.rows.map((r) => r.score));
+  sig.rows = sortRows(rows, sig.sort);
+  $("sigSub").textContent = sig.showAll ? `all ${fmtInt(rows.length)} pairs` : `${fmtInt(rows.length)} pairs in the top 5% of scores`;
+
+  const tr = el("tr");
+  for (const c of SIG_COLS) {
+    const active = sig.sort.key === c.key;
+    const th = el("th", { "aria-sort": active ? (sig.sort.dir > 0 ? "ascending" : "descending") : "none" },
+      (typeof c.label === "function" ? c.label() : c.label), el("span", { class: "arrow", text: active ? (sig.sort.dir > 0 ? "↑" : "↓") : "" }));
+    th.addEventListener("click", () => {
+      sig.sort = { key: c.key, dir: active ? -sig.sort.dir : (c.key === "symbol" ? 1 : -1) };
+      renderSigTable();
+    });
+    tr.append(th);
+  }
+  $("sigHead").replaceChildren(tr);
+
+  const body = $("sigBody");
+  if (!sig.rows.length) {
+    body.replaceChildren(el("tr", {}, el("td", { colspan: SIG_COLS.length, class: "empty", text: "Nothing is flagged right now. Tick “Show all pairs” to see every score." })));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  sig.rows.forEach((r, i) => {
+    const row = el("tr", { "data-i": i });
+    if (sig.sel && sig.sel.symbol === r.symbol) row.classList.add("sel");
+    for (const c of SIG_COLS) row.append(el("td", {}, c.cell(r)));
+    row.addEventListener("click", () => showSignalCoin(r));
+    frag.append(row);
+  });
+  body.replaceChildren(frag);
+}
+
+function markSigSelected() {
+  let selRow = null;
+  for (const row of $("sigBody").children) {
+    const r = sig.rows[row.dataset.i];
+    const on = !!(r && sig.sel && r.symbol === sig.sel.symbol);
+    row.classList.toggle("sel", on);
+    if (on) selRow = row;
+  }
+  return selRow;
+}
+
+async function showSignalCoin(r, scroll = true) {
+  sig.sel = r;
+  showDetail();
+  $("dTitle").replaceChildren(base(r.symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = `score ${r.score.toFixed(3)}${r.tier != null ? ` · top ${r.tier}% tier` : ""}`;
+  $("dFocus").hidden = true;
+  $("dBinance").href = `https://www.binance.com/en/trade/${encodeURIComponent(base(r.symbol))}_USDT?type=spot`;
+  const stats = [
+    ["Price", fmtPrice(r.price), fmtDate(r.time)],
+    ["Change 4h", fmtFeat("ret_4h", r.ret_4h), ""],
+    ["Change 24h", fmtFeat("ret_24h", r.ret_24h), ""],
+    ["Change 7d", fmtFeat("ret_7d", r.ret_7d), ""],
+    ["Volume 4h vs normal", fmtFeat("vol_ratio_4h", r.vol_ratio_4h), ""],
+    ["Volatility 24h", fmtFeat("volatility_24h", r.volatility_24h), "per 15m candle"],
+    ["RSI 1h", fmtFeat("rsi_1h", r.rsi_1h), ""],
+    ["Hit +30% in test", r.hist_hit_rate == null ? "—" : pctf(r.hist_hit_rate, 0), r.tier != null ? `top ${r.tier}% tier` : "not flagged"],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  const row = markSigSelected();
+  if (row && scroll) row.scrollIntoView({ block: "nearest" });
+  loadFutures(r.symbol);
+  await drawSymbol(r.symbol);
+  if (sig.sel !== r) return;
+  if (state.scan) setMarkers(r.symbol, null);
+  applyView(() => chart.timeScale().setVisibleRange({ from: r.time - 3 * 86400, to: r.time + 3600 }));
+}
+
+// ---------- charts
+function rightRounded(x, y, w, h) {
+  const r = Math.min(4, h / 2, w);
+  return `M${x},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h - r}Q${x + w},${y + h} ${x + w - r},${y + h}H${x}Z`;
+}
+
+function liftChart(host, inds) {
+  host.replaceChildren();
+  const W = host.clientWidth - 24;
+  if (W <= 0) return;
+  const rowH = 24, labW = Math.min(170, W * 0.42), valW = 46, top = 18;
+  const H = top + inds.length * rowH + 4;
+  const x0 = labW + 8, x1 = W - valW;
+  const max = Math.max(2, Math.ceil(Math.max(...inds.map((i) => i.best_decile_lift))));
+  const X = (v) => x0 + (v / max) * (x1 - x0);
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img" });
+  const step = max <= 6 ? 1 : 2;
+  for (let v = 0; v <= max; v += step) {
+    s.append(svg("line", { x1: X(v), x2: X(v), y1: top - 4, y2: H, class: "gridline" }));
+    const t = svg("text", { x: X(v), y: 10, "text-anchor": "middle" });
+    t.textContent = `${v}×`;
+    s.append(t);
+  }
+  inds.forEach((ind, i) => {
+    const y = top + i * rowH;
+    const g = svg("g", { class: `row${ind.feature === sig.feature ? " sel" : ""}${ind.best_decile_lift < 1.5 ? " weak" : ""}`, tabindex: 0 });
+    g.append(svg("rect", { x: 0, y, width: W, height: rowH, rx: 4, class: "rowbg" }));
+    const lab = svg("text", { x: 6, y: y + rowH / 2 + 4, class: "lab" });
+    lab.textContent = SHORT[ind.feature] || ind.feature;
+    g.append(lab);
+    const bh = 12;
+    g.append(svg("path", { d: rightRounded(X(0), y + (rowH - bh) / 2, X(ind.best_decile_lift) - X(0), bh), class: "bar" }));
+    const val = svg("text", { x: X(ind.best_decile_lift) + 6, y: y + rowH / 2 + 4, class: "val" });
+    val.textContent = `${ind.best_decile_lift.toFixed(1)}×`;
+    g.append(val);
+    const [lo, hi] = ind.best_decile;
+    g.addEventListener("pointermove", (e) => showTip(e, [`${ind.best_decile_lift.toFixed(1)}× average`,
+      `${ind.description} · best decile ${fmtFeat(ind.feature, lo)} to ${fmtFeat(ind.feature, hi)}`]));
+    g.addEventListener("pointerleave", hideTip);
+    const pick = () => { sig.feature = ind.feature; renderSigCharts(); };
+    g.addEventListener("click", pick);
+    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+    s.append(g);
+  });
+  // Reference: 1× = average pump rate
+  s.append(svg("line", { x1: X(1), x2: X(1), y1: top - 4, y2: H, class: "refline" }));
+  host.append(s);
+}
+
+function renderSigCharts() {
+  const rep = sig.report;
+  if (!rep) return;
+  const base = rep.train.pump_rate;
+  liftChart($("chLift"), rep.indicators);
+
+  const ind = rep.indicators.find((x) => x.feature === sig.feature) || rep.indicators[0];
+  const name = SHORT[ind.feature] || ind.feature;
+  $("decTitle").textContent = `${name}: pump rate by decile`;
+  $("decSub").textContent = "D1 = lowest 10% of values · D10 = highest · training data";
+  columnChart($("chDecile"), ind.deciles.map((d, i) => ({ label: `D${i + 1}`, value: d.rate * 100, d })), {
+    labelWidth: 26, ref: base * 100, refLabel: `average ${pctf(base, 2)}`,
+    fmtTick: (v) => (v === 0 ? "0" : `${v.toFixed(v < 10 ? 1 : 0)}%`),
+    tip: (b) => [`${b.d.rate * 100 < 10 ? (b.d.rate * 100).toFixed(2) : (b.d.rate * 100).toFixed(1)}% pumped`,
+      `${fmtFeat(ind.feature, b.d.lo)} to ${fmtFeat(ind.feature, b.d.hi)} · ${fmtInt(b.d.n)} candles`],
+  });
+  const [lo, hi] = ind.best_decile;
+  $("decExplain").textContent =
+    `${ind.description}. When it was between ${fmtFeat(ind.feature, lo)} and ${fmtFeat(ind.feature, hi)}, ` +
+    `${pctf(ind.best_decile_rate, 2)} of candles were followed by a +30% touch within 24h: ${ind.best_decile_lift.toFixed(1)}× the ${pctf(base, 2)} average.`;
+
+  const t = rep.test, rnd = rep.random_baseline;
+  const tierBins = (fn, tipFn) => [
+    ...rep.tiers.map((x) => ({ label: `Top ${x.top_pct}%`, value: fn(x), x })),
+    { label: "Random", value: fn(rnd), x: rnd, cls: "bar muted" },
+  ];
+  columnChart($("chTierHit"), tierBins((x) => x.hit_rate * 100), {
+    labelWidth: 54, ref: t.pump_rate * 100, refLabel: "average",
+    fmtTick: (v) => (v === 0 ? "0" : `${+v.toFixed(1)}%`),
+    tip: (b) => [`${(b.value).toFixed(1)}% hit +30%`, `${b.label} · ${fmtInt(b.x.signals)} signals · median max gain ${signed(b.x.median_max_gain)}`],
+  });
+  columnChart($("chTierRet"), tierBins((x) => x.median_ret_24h * 100), {
+    labelWidth: 54,
+    fmtTick: (v) => (v === 0 ? "0" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`),
+    tip: (b) => [`${signed(b.x.median_ret_24h)} median`, `${b.label} · mean ${signed(b.x.mean_ret_24h)} · ${pctf(b.x.share_negative_24h, 0)} lower after 24h · median drawdown ${signed(b.x.median_max_drawdown)}`],
+  });
+}
+
+function renderSim() {
+  const groups = Object.entries(sig.report.trading || {});
+  const maxAbs = Math.max(1e-9, ...groups.flatMap(([, rows]) => rows.map((x) => Math.abs(x.mean || 0))));
+  const sls = [-0.05, -0.1, null], tps = [0.1, 0.2, 0.3];
+  const wash = (v) => {
+    const a = Math.round(8 + 50 * Math.min(1, Math.abs(v) / maxAbs));
+    return `color-mix(in srgb, var(${v >= 0 ? "--accent" : "--neg"}) ${a}%, transparent)`;
+  };
+  $("simGrid").replaceChildren(...groups.map(([name, rows]) => {
+    const find = (tp, sl) => rows.find((x) => x.tp === tp && x.sl === sl);
+    const head = el("tr", {}, el("th", { text: "" }), ...sls.map((sl) => el("th", { text: sl == null ? "No stop" : `Stop ${Math.round(sl * 100)}%` })));
+    const body = tps.map((tp) => el("tr", {}, el("td", { class: "rowh", text: `Take +${Math.round(tp * 100)}%` }),
+      ...sls.map((sl) => {
+        const x = find(tp, sl);
+        if (!x) return el("td", {}, "—");
+        const cell = el("div", { class: "sim-cell", style: `background:${wash(x.mean)}` },
+          el("b", { text: signed(x.mean) }), el("small", { text: `${pctf(x.win_rate, 0)} win` }));
+        cell.addEventListener("pointermove", (e) => showTip(e, [`${signed(x.mean)} per trade`,
+          `${name} · take +${Math.round(tp * 100)}% · ${sl == null ? "no stop" : `stop ${Math.round(sl * 100)}%`} · ${x.trades} trades · median ${signed(x.median)}`]));
+        cell.addEventListener("pointerleave", hideTip);
+        return el("td", {}, cell);
+      })));
+    const label = name === "random" ? "Random entries" : `${name[0].toUpperCase()}${name.slice(1)} signals`;
+    return el("div", {},
+      el("h3", {}, label, el("span", { text: ` · ${rows[0] ? rows[0].trades : 0} trades` })),
+      el("table", {}, el("thead", {}, head), el("tbody", {}, ...body)));
+  }));
+}
+
+$("sigAll").addEventListener("change", (e) => { sig.showAll = e.target.checked; renderSigTable(); });
+
+let sigResize;
+new ResizeObserver(() => {
+  clearTimeout(sigResize);
+  sigResize = setTimeout(() => state.view === "signals" && renderSigCharts(), 80);
+}).observe($("chLift"));
+
+// ---------- retrain
+let trainTimer = null;
+function renderTrain(s) {
+  $("trainBtn").disabled = s.running;
+  $("trainText").textContent = s.running
+    ? `${s.message} ${Math.round(Date.now() / 1000 - s.started)}s`
+    : (s.finished && Date.now() / 1000 - s.finished < 15 ? s.message : "");
+}
+async function pollTrain() {
+  const s = await (await fetch("/api/signals/train")).json();
+  renderTrain(s);
+  if (s.running) trainTimer = setTimeout(pollTrain, 1500);
+  else if (trainTimer) { trainTimer = null; await loadSignals(); setTimeout(() => renderTrain(s), 15000); }
+}
+$("trainBtn").addEventListener("click", async () => {
+  const r = await fetch("/api/signals/train", { method: "POST" });
+  renderTrain(await r.json());
+  trainTimer = setTimeout(pollTrain, 1000);
+});
+
+// ---------- view switching
+function setView(v) {
+  const navKey = v;
+  if (v === "bybit" || v === "alerts") {
+    if (al.exchange !== (v === "bybit" ? "bybit" : "binance")) al.sel = null;
+    al.exchange = v === "bybit" ? "bybit" : "binance";
+    v = "alerts";
+  }
+  state.view = v;
+  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend");
+  document.body.classList.add(`view-${v}`);
+  $("viewPumps").hidden = v !== "pumps";
+  $("viewSignals").hidden = v !== "signals";
+  $("viewAlerts").hidden = v !== "alerts";
+  $("viewTrend").hidden = v !== "trend";
+  document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === navKey)));
+  // One chart instance, moved between the views
+  const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot") }[v];
+  slot.append($("detail"));
+  $("dFocus").textContent = v === "alerts" ? "Zoom to alert" : "Zoom to event";
+  if (history.replaceState) history.replaceState(null, "", navKey === "pumps" ? "#" : `#${navKey}`);
+  if (v === "signals") {
+    if (sig.report === undefined) loadSignals();
+    else {
+      renderSigCharts();
+      if (sig.sel) showSignalCoin(sig.sel, false); else if (sig.rows.length) showSignalCoin(sig.rows[0]);
+    }
+  } else if (v === "trend") {
+    if (!tr.report) loadTrend();
+    else {
+      renderTrend();
+      if (tr.sel) showTrendCoin(tr.sel, false); else if (tr.rows.length) showTrendCoin(tr.rows[0]);
+    }
+  } else if (v === "alerts") {
+    al.unseen = 0;
+    updateBadge();
+    renderAlerts();
+    if (al.sel) showAlert(al.sel, false); else if (al.rows.length) showAlert(al.rows[0]);
+  } else {
+    renderCharts(state.rows, Math.round(state.threshold * 100));
+    if (state.selected) selectEvent(state.selected, false);
+    else if (state.coin) showCoin(state.coin);
+    else if (state.rows.length) selectEvent(sortRows(state.rows, state.sort.events)[0]);
+  }
+}
+$("nav").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setView(b.dataset.view); });
+
+function refreshDetail() {
+  if (state.view === "trend") { if (tr.report) renderTrend(); if (tr.sel) showTrendCoin(tr.sel, false); }
+  else if (state.view === "alerts") { if (al.sel) showAlert(al.sel, false); }
+  else if (state.view === "signals") { if (sig.sel) showSignalCoin(sig.sel, false); }
+  else if (state.selected) selectEvent(state.selected, false);
+  else if (state.coin) showCoin(state.coin);
+}
+
+// ------------------------------------------------------------------ alerts view
+const SETUP_LABEL = { trend: "Trend confirmation", ignition: "Ignition" };
+const al = {
+  data: null, rows: [], sel: null, seen: new Set(), first: true, unseen: 0,
+  setup: "all", period: 24, minVol: 0, query: "", sort: { key: "time", dir: -1 },
+  status: "all", notifyOn: "alert", confSeen: new Set(),
+  exchange: "binance",   // the Alerts tab shows Binance coins, the Bybit tab Bybit-only coins
+  sound: false, audio: null, lastScan: undefined,  // undefined = not polled yet; null = server has not scanned yet
+};
+
+async function loadAlerts() {
+  let d;
+  try { d = await (await fetch("/api/alerts")).json(); } catch { return; }
+  al.data = d;
+  // New candles on the server: drop cached candles so charts show them
+  if (d.live.last_scan !== al.lastScan) {
+    // Refresh on every new scan, including the first one finishing after the page loaded
+    const firstLoad = al.lastScan === undefined;
+    al.lastScan = d.live.last_scan;
+    if (!firstLoad) {
+      dataVersion++;
+      currentSymbol = null;
+      if (state.view === "pumps") loadScan();
+      else if (state.view === "signals") loadSignals();
+      else if (state.view === "alerts") refreshDetail();
+    }
+  }
+  // Re-point the selection at the refreshed alert object (its results have moved on)
+  if (al.sel) al.sel = d.alerts.find((a) => a.id === al.sel.id) || al.sel;
+  // Notifications for alerts first seen live
+  const fresh = d.alerts.filter((a) => a.source === "live" && !al.seen.has(a.id));
+  d.alerts.forEach((a) => al.seen.add(a.id));
+  const confirmedNow = d.alerts.filter((a) => a.source === "live" && a.confirmed === true && !al.confSeen.has(a.id));
+  d.alerts.forEach((a) => { if (a.confirmed === true) al.confSeen.add(a.id); });
+  if (!al.first) {
+    if (al.notifyOn === "alert" && fresh.length) notify(fresh.filter(passesFilters), false);
+    if (al.notifyOn === "confirm" && confirmedNow.length) notify(confirmedNow.filter(passesFilters), true);
+  }
+  al.first = false;
+  renderLive();
+  if (state.view === "alerts") {
+    renderAlerts();
+    if (!al.sel && al.rows.length) showAlert(al.rows[0]);
+  }
+}
+
+function passesFilters(a) {
+  return (al.setup === "all" || a.setup === al.setup) && (a.volume_24h || 0) >= al.minVol;
+}
+
+function notify(list, confirmed) {
+  if (!list.length) return;
+  if (state.view !== "alerts" || document.hidden) al.unseen += list.length;
+  updateBadge();
+  if (al.sound) beep();
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const lines = list.slice(0, 4).map((a) => confirmed
+    ? `${a.exchange === "bybit" ? "[Bybit] " : ""}${base(a.symbol)} · ${SETUP_LABEL[a.setup]} held 1h · ${signed(a.chg_1h)} since alert`
+    : `${a.exchange === "bybit" ? "[Bybit] " : ""}${base(a.symbol)} · ${SETUP_LABEL[a.setup]} · vol ${fmtFeat("vol_ratio_4h", a.vol_x)} · candle ${signed(a.chg)}`);
+  const what = confirmed ? "confirmed" : "alert";
+  const n = new Notification(list.length === 1 ? `${base(list[0].symbol)}/USDT ${what}` : `${list.length} new ${what}s`, {
+    body: lines.join("\n") + (list.length > 4 ? `\n+${list.length - 4} more` : ""), tag: "pump-scanner",
+  });
+  n.onclick = () => {
+    window.focus();
+    const a = al.data.alerts.find((x) => x.id === list[0].id);
+    setView(a && a.exchange === "bybit" ? "bybit" : "alerts");
+    if (a) showAlert(a);
+  };
+}
+
+function updateBadge() {
+  const b = $("navCount");
+  b.hidden = !al.unseen;
+  b.textContent = al.unseen > 99 ? "99+" : String(al.unseen);
+  document.title = al.unseen ? `(${al.unseen}) Pump Scanner` : "Pump Scanner";
+}
+
+function beep() {
+  try {
+    const ctx = al.audio || (al.audio = new AudioContext());
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+    o.connect(g).connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 0.4);
+  } catch {}
+}
+
+function fmtClock(t) {
+  const d = tzDate(t);
+  return [d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()].map((x) => String(x).padStart(2, "0")).join(":");
+}
+
+function renderLive() {
+  const d = al.data;
+  if (!d) return;
+  const L = d.live;
+  const pill = $("livePill");
+  pill.classList.toggle("on", L.enabled && !L.running);
+  pill.classList.toggle("busy", L.running);
+  $("liveText").textContent = L.running ? "Scanning…" : L.enabled ? "Live" : "Paused";
+  $("liveToggle").textContent = L.enabled ? "Pause" : "Resume";
+  const left = L.next_scan ? Math.max(0, Math.round(L.next_scan - Date.now() / 1000)) : null;
+  const parts = [];
+  if (L.last_scan) parts.push(`Last scan ${fmtClock(L.last_scan)} ${tzShort()} (${L.duration}s)`);
+  if (L.message) parts.push(L.message);
+  if (L.enabled && left != null && !L.running) parts.push(`next in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`);
+  $("liveMeta").textContent = parts.join(" · ");
+  const nb = $("notifBtn");
+  if (!("Notification" in window)) { nb.textContent = "Notifications unsupported"; nb.disabled = true; }
+  else if (Notification.permission === "granted") { nb.textContent = "Notifications on"; nb.disabled = true; }
+  else if (Notification.permission === "denied") { nb.textContent = "Notifications blocked"; nb.disabled = true; }
+}
+
+const statusOf = (a) => (a.confirmed == null ? "pending" : a.confirmed ? "confirmed" : "failed");
+function statusNode(a) {
+  const st = statusOf(a);
+  const tip = st === "pending" ? "the hour after the alert isn't over yet"
+    : st === "confirmed" ? "held the alert price, made a higher high and closed above EMA9"
+    : `failed: ${[!a.held && "dipped >1% below alert price", !a.higher_high && "no higher high", !a.above_ema9 && "closed below EMA9"].filter(Boolean).join(", ")}`;
+  return el("span", { class: `st ${st === "confirmed" ? "ok" : st === "failed" ? "bad" : "wait"}`, title: tip,
+    text: st === "confirmed" ? "✓" : st === "failed" ? "✗" : "⏳" });
+}
+
+const AL_COLS = [
+  { key: "time", label: () => `Alert (${tzShort()})`, cell: (a) => {
+      // Shown at the candle's close time: the moment the alert could be acted on
+      const t = a.time + 900, sameDay = tzDay(t) === tzDay(Date.now() / 1000);
+      const n = el("span", {}, sameDay ? fmtClock(t).slice(0, 5) : fmtDate(t));
+      if (a.source === "live" && a.detected_at && Date.now() / 1000 - a.detected_at < 1800) n.append(el("span", { class: "new-b", text: "NEW" }));
+      return n;
+    } },
+  { key: "symbol", label: "Coin", cell: (a) => {
+      const n = symNode(a.symbol);
+      if (a.tags && a.tags.length) n.append(el("span", { class: "risk-b", text: "risk", title: `Bybit flags this coin: ${a.tags.join(", ")}` }));
+      return n;
+    } },
+  { key: "setup", label: "Setup", cell: (a) => el("span", { class: `setup-b ${a.setup}`, text: a.setup === "trend" ? "Trend" : "Ignition" }) },
+  { key: "vol_x", label: "Volume", cell: (a) => fmtFeat("vol_ratio_4h", a.vol_x) },
+  { key: "chg_1h", label: "1h after", cell: (a) => el("span", {}, a.chg_1h == null ? el("span", { class: "dim", text: "—" }) : changeNode(a.chg_1h), statusNode(a)) },
+  { key: "now", label: "Since alert", cell: (a) => el("b", {}, changeNode(a.now)) },
+  { key: "peak", label: "Best", cell: (a) => changeNode(a.peak) },
+  { key: "trough", label: "Worst", cell: (a) => changeNode(a.trough) },
+  { key: "reached5", label: "+5%", cell: (a) => (a.reached5 ? el("span", { class: "check", text: "✓" })
+      : el("span", { class: "dim", text: a.done ? "✗" : "…", title: a.done ? "24h passed without +5%" : "still inside its 24h window" })) },
+];
+
+function filteredAlerts() {
+  const d = al.data;
+  if (!d) return [];
+  const from = d.now - al.period * 3600;
+  const q = al.query.trim().toUpperCase();
+  return d.alerts.filter((a) => (a.exchange || "binance") === al.exchange && a.time >= from && passesFilters(a) && (!q || a.symbol.includes(q))
+    && (al.status === "all" || statusOf(a) === al.status));
+}
+
+function renderAlerts() {
+  const d = al.data;
+  if (!d) return;
+  const rows = filteredAlerts();
+  al.rows = sortRows(rows, al.sort);
+
+  // Track record from the 90-day backtest (Bybit-only coins have their own)
+  const st = al.exchange === "bybit" ? d.stats_bybit : d.stats;
+  const tr = (k) => (st && st[k]
+    ? `${pctf(st[k].hit5, 0)} touched +5% within 24h, ${pctf(st[k].share_down_24h, 0)} were lower 24h later (~${Math.round(st[k].per_day)}/day)` : "");
+  $("alWarnText").replaceChildren(
+    el("strong", { text: al.exchange === "bybit"
+      ? `Bybit-only coins (${d.bybit_coins} not listed on Binance, ≥ $250K/day). Alerts flag moves, not winners; these books are thinner, so expect more slippage. `
+      : "Alerts flag moves, not winners. " }),
+    st ? `90-day backtest: Trend: ${tr("trend")}. Ignition: ${tr("ignition")}. ` +
+         (st.trend_confirmed ? `Trend alerts that passed the 1h check (entered 1h later): ${tr("trend_confirmed")}. ` : "") +
+         `Random entries: ${pctf(st.random.hit5, 0)} touched +5%, ${pctf(st.random.share_down_24h, 0)} lower after 24h. ` +
+         `The 1h check removes most false signals but only brings results level with random entries. Not financial advice.`
+       : "Run “python setups.py” to see each setup's track record.");
+
+  // KPIs
+  const n = rows.length;
+  const nT = rows.filter((a) => a.setup === "trend").length;
+  const reached = rows.filter((a) => a.reached5).length;
+  const dd = rows.filter((a) => a.trough != null && a.trough <= -0.05).length;
+  const nowMed = n ? median(rows.map((a) => a.now)) : null;
+  const decided = rows.filter((a) => a.confirmed != null);
+  const nConf = decided.filter((a) => a.confirmed).length;
+  const statKey = (k) => (al.status === "confirmed" && st && st[`${k}_confirmed`] ? `${k}_confirmed` : k);
+  $("alKpis").replaceChildren(
+    kpi(`Alerts, last ${al.period}h`, fmtInt(n), `${nT} trend · ${n - nT} ignition`, { hero: true }),
+    kpi("Passed the 1h check", decided.length ? pctf(nConf / decided.length, 0) : "—",
+      `${nConf} of ${decided.length} · ${n - decided.length} still pending`),
+    kpi("Reached +5%", n ? pctf(reached / n, 0) : "—", "of these alerts, so far"),
+    kpi("Median since alert", nowMed == null ? "—" : signed(nowMed), "price now vs. alert price"),
+    kpi("Dropped 5%+", n ? pctf(dd / n, 0) : "—", "at some point after the alert"),
+    kpi(al.status === "confirmed" ? "Backtest: lower 24h after entry" : "Backtest: lower after 24h",
+      st && al.setup !== "all" ? pctf(st[statKey(al.setup)].share_down_24h, 0)
+        : st ? `${pctf(st[statKey("trend")].share_down_24h, 0)} / ${pctf(st[statKey("ignition")].share_down_24h, 0)}` : "—",
+      st ? `${al.setup === "all" ? "trend / ignition · " : ""}${al.status === "confirmed" ? "confirmed only · " : ""}random ${pctf(st.random.share_down_24h, 0)}` : ""),
+  );
+
+  $("alSub").textContent = `${al.exchange === "bybit" ? "Bybit · " : ""}${fmtInt(n)} alert${n === 1 ? "" : "s"} · results update every scan`;
+  const trh = el("tr");
+  for (const c of AL_COLS) {
+    const active = al.sort.key === c.key;
+    const th = el("th", { "aria-sort": active ? (al.sort.dir > 0 ? "ascending" : "descending") : "none" },
+      (typeof c.label === "function" ? c.label() : c.label), el("span", { class: "arrow", text: active ? (al.sort.dir > 0 ? "↑" : "↓") : "" }));
+    th.addEventListener("click", () => {
+      al.sort = { key: c.key, dir: active ? -al.sort.dir : (c.key === "symbol" || c.key === "setup" ? 1 : -1) };
+      renderAlerts();
+    });
+    trh.append(th);
+  }
+  $("alHead").replaceChildren(trh);
+  const body = $("alBody");
+  if (!al.rows.length) {
+    body.replaceChildren(el("tr", {}, el("td", { colspan: AL_COLS.length, class: "empty", text: "No alerts match these filters yet. New ones appear here as each 15-minute candle closes." })));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  al.rows.forEach((a, i) => {
+    const row = el("tr", { "data-i": i });
+    if (al.sel && al.sel.id === a.id) row.classList.add("sel");
+    if (a.source === "live" && a.detected_at && Date.now() / 1000 - a.detected_at < 60) row.classList.add("fresh");
+    for (const c of AL_COLS) row.append(el("td", {}, c.cell(a)));
+    row.addEventListener("click", () => showAlert(a));
+    frag.append(row);
+  });
+  body.replaceChildren(frag);
+}
+
+function markAlertSelected() {
+  let selRow = null;
+  for (const row of $("alBody").children) {
+    const a = al.rows[row.dataset.i];
+    const on = !!(a && al.sel && a.id === al.sel.id);
+    row.classList.toggle("sel", on);
+    if (on) selRow = row;
+  }
+  return selRow;
+}
+
+function zoomToAlert(a) {
+  const last = al.data ? al.data.now : a.time + 86400;
+  return applyView(() => chart.timeScale().setVisibleRange({ from: a.time - 12 * 3600, to: Math.min(a.time + 30 * 3600, last) }));
+}
+
+async function showAlert(a, scroll = true) {
+  al.sel = a;
+  showDetail();
+  $("dTitle").replaceChildren(base(a.symbol), el("span", { class: "q", text: "/USDT" }));
+  const isBybit = a.exchange === "bybit";
+  $("dPill").textContent = `${isBybit ? "Bybit · " : ""}${SETUP_LABEL[a.setup]} · ${fmtDate(a.time + 900)} ${tzShort()}`;
+  $("dFocus").hidden = false;
+  $("dBinance").href = isBybit ? `https://www.bybit.com/en/trade/spot/${encodeURIComponent(base(a.symbol))}/USDT`
+    : `https://www.binance.com/en/trade/${encodeURIComponent(base(a.symbol))}_USDT?type=spot`;
+  $("dBinance").textContent = isBybit ? "Bybit ↗" : "Binance ↗";
+  const stats = [
+    ["Alert price", fmtPrice(a.price), "candle close"],
+    ["Since alert", signed(a.now), a.hours != null ? `${fmtHours(a.hours)} ago` : ""],
+    ["Best so far", signed(a.peak), "within 24h"],
+    ["Worst so far", signed(a.trough), "within 24h"],
+    ["Volume", fmtFeat("vol_ratio_4h", a.vol_x), `2h avg ${fmtFeat("vol_ratio_4h", a.vol_x_2h)}`],
+    ["Alert candle", signed(a.chg), `vs EMA21 ${signed(a.ext_ema21)}`],
+    ["RSI 14", a.rsi == null ? "—" : a.rsi.toFixed(0), a.rsi > 70 ? "overbought zone" : ""],
+    ["Already up 24h", signed(a.ret_24h), `24h vol ${fmtCompact(a.volume_24h || 0)}`],
+    ["1h after", a.chg_1h == null ? "pending" : signed(a.chg_1h),
+      a.confirmed == null ? "check runs 1h after the alert" : a.confirmed ? "✓ confirmed" : "✗ failed"],
+    ["Held alert price", a.held == null ? "—" : a.held ? "✓ yes" : "✗ no", "never >1% below"],
+    ["Higher high in 1h", a.higher_high == null ? "—" : a.higher_high ? "✓ yes" : "✗ no", "above alert candle high"],
+    ["Above EMA9 at 1h", a.above_ema9 == null ? "—" : a.above_ema9 ? "✓ yes" : "✗ no", "momentum still up"],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  const row = markAlertSelected();
+  if (row && scroll) row.scrollIntoView({ block: "nearest" });
+  loadFutures(a.symbol);
+  await drawSymbol(a.symbol);
+  if (al.sel !== a) return;
+  setAlertMarkers(a.symbol, a);
+  zoomToAlert(a);
+}
+
+function setAlertMarkers(symbol, focus) {
+  const accent = css("--accent"), muted = css("--muted");
+  const list = (al.data ? al.data.alerts : []).filter((x) => x.symbol === symbol);
+  const m = list.map((x) => {
+    const on = focus && x.id === focus.id;
+    return { time: x.time, position: "belowBar", shape: on ? "arrowUp" : "circle", color: on ? accent : muted,
+             text: on ? (x.setup === "trend" ? "Trend" : "Ignition") : "" };
+  });
+  if (focus && focus.confirm_time) {
+    m.push({ time: focus.confirm_time, position: "aboveBar", shape: "circle",
+             color: focus.confirmed ? css("--up") : css("--down"), text: focus.confirmed ? "1h ✓" : "1h ✗" });
+  }
+  m.sort((p, q) => p.time - q.time);
+  candleSeries.setMarkers(m);
+  for (const pl of priceLines) candleSeries.removePriceLine(pl);
+  priceLines = focus ? [candleSeries.createPriceLine({ price: focus.price, color: accent, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "alert" })] : [];
+}
+
+function bindSegAl(id, key, parse) {
+  const box = $(id);
+  const sync = () => box.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(parse(b.dataset.v) === al[key])));
+  box.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    al[key] = parse(b.dataset.v);
+    sync();
+    renderAlerts();
+  });
+  sync();
+}
+bindSegAl("aSetup", "setup", (v) => v);
+bindSegAl("aPeriod", "period", Number);
+bindSegAl("aVol", "minVol", Number);
+bindSegAl("aStatus", "status", (v) => v);
+bindSegAl("aNotify", "notifyOn", (v) => v);
+try { const v = localStorage.getItem("notifyOn"); if (v === "confirm" || v === "alert") { al.notifyOn = v; } } catch {}
+$("aNotify").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === al.notifyOn)));
+$("aNotify").addEventListener("click", () => { try { localStorage.setItem("notifyOn", al.notifyOn); } catch {} });
+let alSearchTimer;
+$("aSearch").addEventListener("input", (e) => {
+  clearTimeout(alSearchTimer);
+  alSearchTimer = setTimeout(() => { al.query = e.target.value; renderAlerts(); }, 120);
+});
+$("liveToggle").addEventListener("click", async () => {
+  const enabled = !(al.data && al.data.live.enabled);
+  await fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) });
+  loadAlerts();
+});
+$("notifBtn").addEventListener("click", async () => {
+  if ("Notification" in window) await Notification.requestPermission();
+  renderLive();
+});
+$("soundChk").addEventListener("change", (e) => {
+  al.sound = e.target.checked;
+  try { localStorage.setItem("alertSound", al.sound ? "1" : "0"); } catch {}
+  if (al.sound) beep();  // also unlocks audio, which needs a user gesture
+});
+try { if (localStorage.getItem("alertSound") === "1") { al.sound = true; $("soundChk").checked = true; } } catch {}
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && state.view === "alerts") { al.unseen = 0; updateBadge(); }
+});
+setInterval(renderLive, 1000);
+setInterval(loadAlerts, 15000);
+
+// ------------------------------------------------------------------ futures context (detail panel)
+let futToken = 0;
+async function loadFutures(symbol) {
+  const box = $("dFut");
+  const token = ++futToken;
+  box.hidden = false;
+  $("dFutSub").textContent = "loading Binance perpetual data…";
+  $("dFutStats").replaceChildren();
+  $("dFutNote").textContent = "";
+  let ctx;
+  try {
+    const r = await fetch(`/api/futures/${encodeURIComponent(symbol)}`);
+    ctx = r.ok ? await r.json() : null;
+  } catch { ctx = null; }
+  if (token !== futToken) return;  // the user has moved on to another coin
+  if (!ctx) { $("dFutSub").textContent = "no Binance perpetual futures for this coin"; return; }
+  const perDay = 24 / (ctx.funding_interval_h || 8);
+  const ann = (f) => (f == null ? "" : `${signed(f * perDay * 365, 0)}/yr · every ${ctx.funding_interval_h || 8}h`);
+  const fund = ctx.funding;
+  const reads = [];
+  if (ctx.oi_chg_24h != null) reads.push(ctx.oi_chg_24h > 0.1 ? "new money flowing into futures" : ctx.oi_chg_24h < -0.1 ? "futures positions closing" : "open interest steady");
+  if (fund != null) reads.push(fund > 0.0003 ? "longs paying a lot (crowded)" : fund < 0 ? "shorts paying longs" : "funding normal");
+  if (ctx.long_short != null) reads.push(ctx.long_short > 2 ? "most accounts long" : ctx.long_short < 0.8 ? "most accounts short" : "accounts balanced");
+  $("dFutSub").textContent = `Binance perpetual · live · ${reads.join(" · ")}`;
+  const stats = [
+    ["Open interest 4h", ctx.oi_chg_4h == null ? "—" : signed(ctx.oi_chg_4h), ctx.oi_value ? fmtCompact(ctx.oi_value) : ""],
+    ["Open interest 24h", ctx.oi_chg_24h == null ? "—" : signed(ctx.oi_chg_24h), "change"],
+    ["Funding (last)", fund == null ? "—" : `${(fund * 100).toFixed(4)}%`, ann(fund)],
+    ["Long / short accounts", ctx.long_short == null ? "—" : ctx.long_short.toFixed(2), ctx.long_short == null ? "" : `${Math.round(ctx.long_short / (1 + ctx.long_short) * 100)}% long`],
+  ];
+  $("dFutStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  $("dFutNote").textContent = FUT_NOTE;
+}
+// From the futures test on Trend alerts, Sep 9 – Oct 6 (Binance keeps only ~30 days of this history)
+const FUT_NOTE = "Context only. Tested on 1,819 Trend alerts (Sep 9 – Oct 6): no reading improved results in both halves of the month. " +
+  "Rising open interest on alerts that passed the 1h check looked slightly better, but the sample is too small to trust.";
+
+// ------------------------------------------------------------------ trend view (daily)
+const tr = { report: null, state: null, rows: [], sel: null, sort: { key: "weight", dir: -1 }, eq: null, eqSeries: {}, timer: null };
+
+async function loadTrend() {
+  let d;
+  try { d = await (await fetch("/api/trend")).json(); } catch { return; }
+  tr.report = d.report;
+  tr.state = d.state;
+  renderTrendState();
+  if (!tr.report) {
+    $("trNotice").textContent = "No daily data yet. Click “Update now” to download daily candles (about 40 seconds).";
+    $("trNotice").classList.add("on");
+    return;
+  }
+  $("trNotice").classList.remove("on");
+  renderTrend();
+  if (state.view === "trend") {
+    const keep = tr.sel && tr.rows.find((x) => x.symbol === tr.sel.symbol);
+    if (keep) showTrendCoin(keep, false); else if (tr.rows.length) showTrendCoin(tr.rows[0]);
+  }
+}
+
+function renderTrendState() {
+  const s = tr.state || {};
+  $("trRefresh").disabled = !!s.running;
+  const nextUtcMidnight = (Math.floor(Date.now() / 86400000) + 1) * 86400 + 60;
+  $("trStatus").textContent = s.running ? s.message
+    : `${s.message ? s.message + " · " : ""}updates automatically after each daily close (next ${fmtDate(nextUtcMidnight)} ${tzShort()})`;
+}
+
+function renderTrend() {
+  const r = tr.report;
+  const p = r.params, c = r.current;
+  const f = (v) => (v == null ? "—" : signed(v, 0));
+  const btcRow = c.rows.find((x) => x.symbol === "BTCUSDT");
+  $("trWarnText").replaceChildren(
+    el("strong", { text: `Daily trend rule: hold a coin while EMA${p.fast} > EMA${p.slow} and price > EMA${p.slow} on daily closes. ` }),
+    `Backtest ${r.start.slice(0, 4)}–${r.end.slice(0, 4)}, fees included: on BTC alone it returned ${f(r.btc_trend.cagr)}/yr vs ${f(r.btc.cagr)} for holding, ` +
+    `cut the worst drop from ${f(r.btc.max_dd)} to ${f(r.btc_trend.max_dd)}, and was positive in every period. ` +
+    `Spread over the top ${p.top_n} coins it did worse than BTC alone, and holding those coins blindly lost up to ${f(r.equal_weight.max_dd)}. ` +
+    `Only coins listed today are in the data, which flatters every result. Not financial advice.`);
+
+  $("trKpis").replaceChildren(
+    kpi("BTC daily trend", btcRow ? (btcRow.in_trend ? "Uptrend" : "No uptrend") : "—",
+      btcRow ? `${btcRow.in_trend ? "for" : "out for"} ${btcRow.days} days · ${signed(btcRow.vs_ema_slow)} vs EMA${p.slow}` : "", { hero: true }),
+    kpi(`Top ${p.top_n} in uptrend`, `${c.in_trend} / ${c.universe}`, "market breadth"),
+    kpi("Basket rule exposure", pctf(c.invested, 0), `share invested on ${fmtDate(Date.parse(c.date) / 1000, false)} close`),
+    kpi("BTC rule, per year", f(r.btc_trend.cagr), `holding BTC ${f(r.btc.cagr)} · since ${r.start.slice(0, 4)}`),
+    kpi("BTC rule, worst drop", f(r.btc_trend.max_dd), `holding BTC ${f(r.btc.max_dd)}`),
+    kpi("BTC rule, time in market", pctf(r.btc_trend.avg_exposure, 0), "out of the market the rest of the time"),
+  );
+
+  // Coin table
+  tr.rows = sortRows(c.rows.map((x) => ({ ...x, edge: x.trend_sharpe != null ? x.trend_sharpe - x.hold_sharpe : null })), tr.sort);
+  $("trSub").textContent = `top ${p.top_n} by 30-day volume · daily close ${fmtDate(Date.parse(c.date) / 1000, false)}`;
+  const head = el("tr");
+  for (const col of TR_COLS) {
+    const active = tr.sort.key === col.key;
+    const th = el("th", { "aria-sort": active ? (tr.sort.dir > 0 ? "ascending" : "descending") : "none", title: col.title || "" },
+      col.label, el("span", { class: "arrow", text: active ? (tr.sort.dir > 0 ? "↑" : "↓") : "" }));
+    th.addEventListener("click", () => {
+      tr.sort = { key: col.key, dir: active ? -tr.sort.dir : (col.key === "symbol" ? 1 : -1) };
+      renderTrend();
+    });
+    head.append(th);
+  }
+  $("trHead").replaceChildren(head);
+  const frag = document.createDocumentFragment();
+  tr.rows.forEach((x, i) => {
+    const row = el("tr", { "data-i": i });
+    if (tr.sel && tr.sel.symbol === x.symbol) row.classList.add("sel");
+    for (const col of TR_COLS) row.append(el("td", {}, col.cell(x)));
+    row.addEventListener("click", () => showTrendCoin(x));
+    frag.append(row);
+  });
+  $("trBody").replaceChildren(frag);
+
+  renderEquity();
+  renderPeriods();
+  const g = r.grid.map((x) => `EMA${x.fast}/${x.slow}: ${f(x.cagr)}/yr, worst ${f(x.max_dd)}`).join(" · ");
+  $("trMethod").textContent =
+    `How this was tested: signals use each day's close and positions start the next day; 0.1% fee per side on every change. ` +
+    `The basket holds coins in uptrend among the top ${p.top_n} by trailing 30-day volume, sized by inverse 20-day volatility, ` +
+    `with total exposure equal to the share of those coins in uptrend. Other EMA lengths for the basket: ${g}. ` +
+    `${r.coins_in_data} coins with daily data from ${r.start}.`;
+}
+
+const TR_COLS = [
+  { key: "symbol", label: "Coin", cell: (x) => symNode(x.symbol) },
+  { key: "in_trend", label: "Daily trend", cell: (x) => {
+      const n = el("span", { class: `setup-b ${x.in_trend ? "trend" : ""}`, text: x.in_trend ? "Uptrend" : "No" });
+      return x.in_trend && x.days <= 3 ? el("span", {}, n, el("span", { class: "new-b", text: "NEW" })) : n;
+    } },
+  { key: "days", label: "Days", title: "days since the trend state last changed", cell: (x) => String(x.days) },
+  { key: "ret_7d", label: "7d", cell: (x) => changeNode(x.ret_7d) },
+  { key: "ret_30d", label: "30d", cell: (x) => changeNode(x.ret_30d) },
+  { key: "vs_ema_slow", label: "vs EMA50", title: "close vs. the slow EMA — far above means stretched", cell: (x) => changeNode(x.vs_ema_slow) },
+  { key: "weight", label: "Weight", title: "basket weight today (inverse-volatility)", cell: (x) => (x.weight ? pctf(x.weight, 1) : el("span", { class: "dim", text: "—" })) },
+  { key: "edge", label: "Rule vs hold", title: "risk-adjusted return (Sharpe) of the trend rule vs. simply holding, over this coin's own history", cell: (x) =>
+      x.trend_sharpe == null ? el("span", { class: "dim", text: "<1y data" })
+        : el("span", { class: x.edge >= 0 ? "pos" : "negt", text: `${x.trend_sharpe.toFixed(2)} vs ${x.hold_sharpe.toFixed(2)}` }) },
+];
+
+function markTrendSelected() {
+  let selRow = null;
+  for (const row of $("trBody").children) {
+    const x = tr.rows[row.dataset.i];
+    const on = !!(x && tr.sel && x.symbol === tr.sel.symbol);
+    row.classList.toggle("sel", on);
+    if (on) selRow = row;
+  }
+  return selRow;
+}
+
+async function showTrendCoin(x, scroll = true) {
+  tr.sel = x;
+  showDetail();
+  const p = tr.report.params;
+  $("dTitle").replaceChildren(base(x.symbol), el("span", { class: "q", text: "/USDT · daily" }));
+  $("dPill").textContent = x.in_trend ? `Uptrend for ${x.days} days` : `No uptrend (${x.days} days)`;
+  $("dFocus").hidden = true;
+  $("dBinance").href = `https://www.binance.com/en/trade/${encodeURIComponent(base(x.symbol))}_USDT?type=spot`;
+  const f = (v) => (v == null ? "—" : signed(v, 0));
+  const stats = [
+    ["Close", fmtPrice(x.close), fmtDate(Date.parse(tr.report.current.date) / 1000, false)],
+    ["7 days", signed(x.ret_7d), ""],
+    ["30 days", signed(x.ret_30d), ""],
+    [`vs EMA${p.slow}`, signed(x.vs_ema_slow), x.vs_ema_slow > 0.25 ? "stretched" : ""],
+    ["Volatility", pctf(x.volatility, 0), "per year"],
+    ["Basket weight", x.weight ? pctf(x.weight, 1) : "—", "today"],
+    ["Rule on this coin", x.trend_cagr == null ? "—" : `${f(x.trend_cagr)}/yr`, x.hold_cagr == null ? "under 1 year of data" : `holding ${f(x.hold_cagr)}/yr`],
+    ["Worst drop with rule", x.trend_dd == null ? "—" : f(x.trend_dd), x.hold_dd == null ? "" : `holding ${f(x.hold_dd)}`],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  const row = markTrendSelected();
+  if (row && scroll) row.scrollIntoView({ block: "nearest" });
+  const data = await drawSymbol(x.symbol, "1d");
+  if (tr.sel !== x) return;
+  // Where the rule would have entered and exited
+  const ef = emaArr(data.c, p.fast), es = emaArr(data.c, p.slow);
+  const m = [];
+  let prev = false;
+  data.t.forEach((t, i) => {
+    if (ef[i] == null || es[i] == null) return;
+    const up = ef[i] > es[i] && data.c[i] > es[i];
+    if (up !== prev) m.push(up ? { time: t, position: "belowBar", shape: "arrowUp", color: css("--accent"), text: "in" }
+                               : { time: t, position: "aboveBar", shape: "arrowDown", color: css("--muted"), text: "out" });
+    prev = up;
+  });
+  candleSeries.setMarkers(m);
+  for (const pl of priceLines) candleSeries.removePriceLine(pl);
+  priceLines = [];
+  const last = data.t[data.t.length - 1];
+  applyView(() => chart.timeScale().setVisibleRange({ from: last - 365 * 86400, to: last }));
+}
+
+// ---------- equity curves (log scale) with a crosshair readout of every series
+const EQ_SERIES = [
+  { key: "btc_trend", label: "BTC with trend rule", color: "--accent", width: 2, style: 0 },
+  { key: "btc", label: "Hold BTC", color: "--text-2", width: 1, style: 0 },
+  { key: "strategy", label: "Top-30 basket with rule", color: "--peak", width: 2, style: 0 },
+  { key: "equal_weight", label: "Hold top-30 basket", color: "--muted", width: 1, style: 2 },
+];
+
+function renderEquity() {
+  const host = $("eqChart");
+  if (!tr.report || !host.clientWidth) return;
+  if (!tr.eq) {
+    tr.eq = LightweightCharts.createChart(host, { autoSize: true, ...chartTheme(), rightPriceScale: { mode: 1, borderColor: css("--axis") } });
+    for (const s of EQ_SERIES) {
+      tr.eqSeries[s.key] = tr.eq.addLineSeries({ lineWidth: s.width, lineStyle: s.style, priceLineVisible: false, lastValueVisible: true,
+        priceFormat: { type: "custom", formatter: (v) => `×${v < 10 ? v.toFixed(2) : v.toFixed(0)}` } });
+    }
+    tr.eq.subscribeCrosshairMove((param) => {
+      if (!param || !param.time) { eqReadout(null); return; }
+      eqReadout(param.time, Object.fromEntries(EQ_SERIES.map((s) => [s.key, param.seriesData.get(tr.eqSeries[s.key])])));
+    });
+  }
+  tr.eq.applyOptions({ ...chartTheme(), rightPriceScale: { mode: 1, borderColor: css("--axis") },
+    timeScale: { ...chartTheme().timeScale, timeVisible: false } });
+  for (const s of EQ_SERIES) {
+    const ser = tr.eqSeries[s.key];
+    ser.applyOptions({ color: css(s.color) });
+    ser.setData((tr.report.equity[s.key] || []).map(([t, v]) => ({ time: t, value: v })));
+  }
+  tr.eq.timeScale().fitContent();
+  eqReadout(null);
+  $("eqLegend").replaceChildren(...EQ_SERIES.map((s) => el("span", {},
+    el("i", { class: "line", style: `background:var(${s.color});${s.style ? "opacity:.7" : ""}${s.width > 1 ? ";height:3px" : ""}` }), s.label)));
+}
+
+function eqReadout(t, vals) {
+  const out = $("eqReadout");
+  if (!t) {
+    const r = tr.report;
+    out.textContent = `$1 at the start became: BTC with rule ×${(1 + r.btc_trend.total).toFixed(1)} · hold BTC ×${(1 + r.btc.total).toFixed(1)} · ` +
+      `basket with rule ×${(1 + r.strategy.total).toFixed(1)} · hold basket ×${(1 + r.equal_weight.total).toFixed(2)}`;
+    return;
+  }
+  const d = new Date(t * 1000);
+  const parts = EQ_SERIES.filter((s) => vals[s.key]).map((s) => `${s.label} ×${vals[s.key].value.toFixed(2)}`);
+  out.textContent = `${MON[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}: ${parts.join(" · ")}`;
+}
+
+function renderPeriods() {
+  const r = tr.report;
+  const cols = [["btc_trend", "BTC with rule"], ["btc", "Hold BTC"], [`ema${r.params.fast}/${r.params.slow}`, "Basket with rule"], ["equal_weight", "Hold basket"]];
+  const maxAbs = Math.max(0.01, ...r.periods.flatMap((row) => cols.map(([k]) => Math.abs(Math.min(3, (row[k] || {}).cagr || 0)))));
+  const wash = (v) => `color-mix(in srgb, var(${v >= 0 ? "--accent" : "--neg"}) ${Math.round(8 + 50 * Math.min(1, Math.abs(Math.min(3, v)) / maxAbs))}%, transparent)`;
+  const head = el("tr", {}, el("th", { text: "Period" }), ...cols.map(([, lab]) => el("th", { text: lab })));
+  const body = r.periods.map((row) => el("tr", {}, el("td", { class: "rowh", text: row.period }), ...cols.map(([k]) => {
+    const s = row[k] || {};
+    return el("td", {}, el("div", { class: "sim-cell", style: s.cagr == null ? "" : `background:${wash(s.cagr)}` },
+      el("b", { text: s.cagr == null ? "—" : `${signed(s.cagr, 0)}/yr` }), el("small", { text: s.max_dd == null ? "" : `worst ${signed(s.max_dd, 0)}` })));
+  })));
+  $("trPeriods").replaceChildren(el("table", {}, el("thead", {}, head), el("tbody", {}, ...body)));
+}
+
+$("trRefresh").addEventListener("click", async () => {
+  await fetch("/api/trend/refresh", { method: "POST" });
+  tr.state = { running: true, message: "Updating daily candles…" };
+  renderTrendState();
+  clearInterval(tr.timer);
+  tr.timer = setInterval(async () => {
+    const d = await (await fetch("/api/trend")).json();
+    tr.state = d.state;
+    renderTrendState();
+    if (!d.state.running) { clearInterval(tr.timer); dataVersion++; currentSymbol = null; loadTrend(); }
+  }, 3000);
+});
+let trResize;
+new ResizeObserver(() => { clearTimeout(trResize); trResize = setTimeout(() => state.view === "trend" && tr.report && renderEquity(), 100); }).observe($("eqChart"));
+setInterval(() => { if (state.view === "trend") loadTrend(); }, 5 * 60 * 1000);
+
+// ------------------------------------------------------------------ time zone switch
+function renderClock() {
+  const now = Date.now() / 1000;
+  $("clock").replaceChildren(fmtClock(now).slice(0, 5), el("small", { text: tzShort() }));
+}
+function applyTz() {
+  document.querySelectorAll(".tzl").forEach((n) => { n.textContent = tzShort(); });
+  $("tzLocalBtn").title = `Your browser's time zone (${utcOffsetLabel()})`;
+  $("tzSeg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === tzMode)));
+  renderClock();
+}
+$("tzSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || b.dataset.v === tzMode) return;
+  tzMode = b.dataset.v;
+  try { localStorage.setItem("tzMode", tzMode); } catch {}
+  applyTz();
+  // Re-render everything that shows a time
+  if (state.scan) render();
+  if (sig.report && sig.live) renderSignals();
+  if (al.data) { renderLive(); renderAlerts(); }
+  if (chart) {
+    chart.applyOptions(chartTheme());
+    macdChart.applyOptions({ ...chartTheme(), timeScale: { visible: false } });
+  }
+  refreshDetail();
+});
+applyTz();
+setInterval(renderClock, 1000);
+
+// ------------------------------------------------------------------ boot
+(async () => {
+  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "bybit" }[location.hash] || "pumps";
+  state.view = startView === "bybit" ? "alerts" : startView;
+  document.body.classList.add(`view-${state.view}`);
+  document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === startView)));
+  await loadScan();
+  const s = await (await fetch("/api/download")).json();
+  renderDownload(s);
+  if (s.running) pollTimer = setTimeout(pollDownload, 800);
+  const t = await (await fetch("/api/signals/train")).json();
+  if (t.running) { renderTrain(t); trainTimer = setTimeout(pollTrain, 1500); }
+  await loadAlerts();
+  if (startView !== "pumps") setView(startView);
+  else if (state.rows.length) selectEvent(sortRows(state.rows, state.sort.events)[0]);
+})();
+</script>
+</body>
+</html>

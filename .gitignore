@@ -1,0 +1,13 @@
+# Python environment and caches
+.venv/
+__pycache__/
+*.pyc
+
+# Market data: ~600 MB, re-downloaded from Binance/Bybit on first run
+data/
+
+# Logs from runs
+*.log
+
+# Local editor/assistant settings (machine-specific paths)
+.claude/
