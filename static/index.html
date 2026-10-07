@@ -348,6 +348,9 @@ tbody tr.sel { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--a
 tr.fresh { animation: flash 2.4s ease-out 1; }
 @keyframes flash { from { background: var(--accent-wash); } to { background: transparent; } }
 .check { color: var(--good-text); font-weight: 600; }
+.tg-panel { margin-top: 10px; padding: 12px 16px; display: grid; gap: 10px; }
+.tg-row { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; }
+.tg-panel code { font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
 .warn.info { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 .warn.info svg { color: var(--accent); }
 .eq-card { margin-top: 12px; }
@@ -421,6 +424,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       <div class="seg tzseg" id="tzSeg" aria-label="Time zone">
         <button data-v="local" id="tzLocalBtn">Local</button><button data-v="utc">UTC</button>
       </div>
+      <a class="btn" id="logoutBtn" href="/logout" hidden>Log out</a>
       <button class="btn icon" id="themeBtn" title="Toggle light/dark" aria-label="Toggle theme">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
       </button>
@@ -609,6 +613,22 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
     </div>
     <button class="btn" id="notifBtn">Enable notifications</button>
     <label class="toggle field"><input type="checkbox" id="soundChk"> Sound</label>
+    <button class="btn" id="tgBtn" aria-expanded="false" aria-controls="tgPanel">Telegram</button>
+  </div>
+  <div class="card tg-panel" id="tgPanel" hidden>
+    <div class="tg-row"><b>Telegram alerts</b><span class="meta" id="tgStatus"></span></div>
+    <div class="tg-row" id="tgControls">
+      <label class="toggle field"><input type="checkbox" id="tgEnabled"> On</label>
+      <div class="field">Send
+        <div class="seg" id="tgEvents"><button data-v="confirmed">After the 1h check</button><button data-v="all">Every alert</button></div>
+      </div>
+      <label class="toggle field"><input type="checkbox" id="tgTrend" data-setup="trend"> Trend</label>
+      <label class="toggle field"><input type="checkbox" id="tgIgn" data-setup="ignition"> Ignition</label>
+      <label class="toggle field"><input type="checkbox" id="tgBinance" data-ex="binance"> Binance</label>
+      <label class="toggle field"><input type="checkbox" id="tgBybit" data-ex="bybit"> Bybit</label>
+      <label class="toggle field"><input type="checkbox" id="tgBtc"> BTC daily trend changes</label>
+      <button class="btn" id="tgTest">Send test</button>
+    </div>
   </div>
 
   <div class="filters" role="toolbar" aria-label="Alert filters">
@@ -2455,6 +2475,64 @@ $("trRefresh").addEventListener("click", async () => {
 let trResize;
 new ResizeObserver(() => { clearTimeout(trResize); trResize = setTimeout(() => state.view === "trend" && tr.report && renderEquity(), 100); }).observe($("eqChart"));
 setInterval(() => { if (state.view === "trend") loadTrend(); }, 5 * 60 * 1000);
+
+// ------------------------------------------------------------------ login + Telegram
+// Any API call answered 401 means the session expired: go to the login page.
+const _fetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const r = await _fetch(...args);
+  if (r.status === 401) { location.href = "/login"; throw new Error("login required"); }
+  return r;
+};
+fetch("/api/me").then((r) => r.json()).then((m) => { $("logoutBtn").hidden = !m.auth; }).catch(() => {});
+
+let tg = null;
+function renderTg() {
+  const st = $("tgStatus");
+  if (!tg || !tg.configured) {
+    st.replaceChildren("Not set up. Stop the app and run ", el("code", { text: ".venv\\Scripts\\python.exe app.py --setup-telegram" }), ", then start it again.");
+    $("tgControls").hidden = true;
+    $("tgBtn").textContent = "Telegram";
+    return;
+  }
+  $("tgControls").hidden = false;
+  st.textContent = tg.last_error ? `Last send failed: ${tg.last_error}` : (tg.enabled ? "Connected · alerts go to your Telegram" : "Connected · paused");
+  $("tgBtn").textContent = tg.enabled ? "Telegram: on" : "Telegram: off";
+  $("tgEnabled").checked = tg.enabled;
+  $("tgEvents").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === tg.events)));
+  for (const id of ["tgTrend", "tgIgn"]) $(id).checked = tg.setups.includes($(id).dataset.setup);
+  for (const id of ["tgBinance", "tgBybit"]) $(id).checked = tg.exchanges.includes($(id).dataset.ex);
+  $("tgBtc").checked = tg.trend_changes;
+}
+async function loadTg() {
+  try { tg = await (await fetch("/api/telegram")).json(); } catch { tg = null; }
+  renderTg();
+}
+async function saveTg(patch) {
+  const r = await fetch("/api/telegram", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+  tg = await r.json();
+  renderTg();
+}
+$("tgBtn").addEventListener("click", () => {
+  const p = $("tgPanel");
+  p.hidden = !p.hidden;
+  $("tgBtn").setAttribute("aria-expanded", String(!p.hidden));
+  if (!p.hidden) loadTg();
+});
+$("tgEnabled").addEventListener("change", (e) => saveTg({ enabled: e.target.checked }));
+$("tgEvents").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ events: b.dataset.v }); });
+for (const id of ["tgTrend", "tgIgn"]) $(id).addEventListener("change", () =>
+  saveTg({ setups: ["tgTrend", "tgIgn"].filter((x) => $(x).checked).map((x) => $(x).dataset.setup) }));
+for (const id of ["tgBinance", "tgBybit"]) $(id).addEventListener("change", () =>
+  saveTg({ exchanges: ["tgBinance", "tgBybit"].filter((x) => $(x).checked).map((x) => $(x).dataset.ex) }));
+$("tgBtc").addEventListener("change", (e) => saveTg({ trend_changes: e.target.checked }));
+$("tgTest").addEventListener("click", async () => {
+  $("tgTest").disabled = true;
+  await saveTg({ test: true });
+  $("tgTest").textContent = "Sent ✓";
+  setTimeout(() => { $("tgTest").textContent = "Send test"; $("tgTest").disabled = false; }, 3000);
+});
+loadTg();
 
 // ------------------------------------------------------------------ time zone switch
 function renderClock() {

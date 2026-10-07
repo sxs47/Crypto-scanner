@@ -19,7 +19,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
-from flask import Flask, abort, jsonify, request, send_from_directory
+import html
+from datetime import timedelta
+
+from flask import Flask, abort, jsonify, redirect, request, send_from_directory, session
+
+import auth
+import notify
 
 import bybit
 import futures
@@ -33,6 +39,58 @@ import trend
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
+app.config.update(SECRET_KEY=auth.secret_key(), SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  PERMANENT_SESSION_LIFETIME=timedelta(days=30))
+
+
+# --------------------------------------------------------------------------- #
+# Login (only when a password has been set: python app.py --set-password)
+# --------------------------------------------------------------------------- #
+@app.before_request
+def require_login():
+    if not auth.enabled() or request.path in ("/login", "/logout"):
+        return None
+    if session.get("auth") == auth.session_token():
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "login required"}), 401
+    return redirect("/login")
+
+
+def _login_page(error=""):
+    nxt = request.values.get("next", "/")
+    page = auth.LOGIN_PAGE.replace("{next}", html.escape(nxt)).replace("{error}", f'<div class="err">{html.escape(error)}</div>' if error else "")
+    return page, 401 if error else 200
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not auth.enabled():
+        return redirect("/")
+    if request.method == "GET":
+        return _login_page()
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    wait = auth.locked_out(ip)
+    if wait:
+        return _login_page(f"Too many attempts. Try again in {wait // 60 + 1} min.")
+    if not auth.check(ip, request.form.get("password")):
+        return _login_page("Wrong password.")
+    session.clear()
+    session.permanent = True
+    session["auth"] = auth.session_token()
+    nxt = request.form.get("next", "/")
+    return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else "/")
+
+
+@app.get("/logout")
+def logout():
+    session.clear()
+    return redirect("/login" if auth.enabled() else "/")
+
+
+@app.get("/api/me")
+def api_me():
+    return jsonify({"auth": auth.enabled()})
 
 _lock = threading.Lock()
 _frames = {}          # symbol -> candle DataFrame on a full 15m grid (Binance)
@@ -315,7 +373,7 @@ def _train_worker():
 # --------------------------------------------------------------------------- #
 def _add_alerts(items, fresh_after=None):
     """Store alerts; those whose candle closed after `fresh_after` count as live (new)."""
-    new = 0
+    new = []
     with _lock:
         for a in items:
             if a["id"] in _alerts:
@@ -324,7 +382,8 @@ def _add_alerts(items, fresh_after=None):
             a["source"] = "live" if fresh else "history"
             a["detected_at"] = time.time() if fresh else None
             _alerts[a["id"]] = a
-            new += fresh
+            if fresh:
+                new.append(a)
         cutoff = time.time() - ALERT_KEEP_H * 3600
         for k in [k for k, a in _alerts.items() if a["time"] < cutoff]:
             del _alerts[k]
@@ -396,10 +455,59 @@ def run_live_cycle():
     fresh_after = int(time.time()) - 45 * 60 - 900
     items = [a for s, df, last in results if df is not None for a in live.alerts_for(s, df, last)]
     items += [a for s, df, last in bresults if df is not None for a in live.alerts_for(s, df, last, "bybit")]
-    new = _add_alerts(items, fresh_after)
+    fresh = _add_alerts(items, fresh_after)
+    new = len(fresh)
+    _telegram_after_scan(fresh)
     if updated and signals.MODEL_PATH.exists():
         threading.Thread(target=get_live, daemon=True).start()
     return len(updated) + len(bupdated), new, time.time() - t0
+
+
+def _telegram_after_scan(fresh):
+    """Send new alerts and newly decided 1h checks to Telegram, per the user's settings."""
+    if not notify.config():
+        return
+    if fresh:
+        batch = [a for a in fresh if notify.wants(a, "new")]
+        if batch:
+            notify.send(notify.format_alerts(batch, "new"))
+    # 1h follow-through: check live alerts whose hour has just finished
+    with _lock:
+        pending = [a for a in _alerts.values() if a.get("source") == "live" and not a.get("confirm_sent")
+                   and a["time"] >= time.time() - 6 * 3600]
+    confirmed = []
+    for a in pending:
+        df = frame_for(a["symbol"], a.get("exchange"))
+        t = pd.Timestamp(a["time"], unit="s", tz="UTC")
+        if df is None or t not in df.index:
+            continue
+        c = setups.confirmation(df, t)
+        if c is None:
+            continue  # the hour isn't over yet
+        a["confirm_sent"] = True
+        if c["confirmed"]:
+            confirmed.append({**a, "chg_1h": c["chg_1h"],
+                              "tags": bybit.symbols().get(a["symbol"], {}).get("tags", []) if a.get("exchange") == "bybit" else []})
+    batch = [a for a in confirmed if notify.wants(a, "confirmed")]
+    if batch:
+        notify.send(notify.format_alerts(batch, "confirmed"))
+
+
+@app.get("/api/telegram")
+def api_telegram():
+    return jsonify(notify.public_config())
+
+
+@app.post("/api/telegram")
+def api_telegram_update():
+    body = request.get_json(silent=True) or {}
+    if body.get("test"):
+        ok = notify.send("🧪 Test message from Pump Scanner — Telegram alerts are working.")
+        return jsonify({"sent": ok, **notify.public_config()})
+    try:
+        return jsonify(notify.update({k: body[k] for k in notify.DEFAULTS if k in body}))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
 
 def _next_boundary():
@@ -464,10 +572,20 @@ def refresh_trend():
     if _trend_state["running"]:
         return
     _trend_state.update(running=True, message="Updating daily candles…")
+    btc_state = lambda r: next((x["in_trend"] for x in (r or {}).get("current", {}).get("rows", []) if x["symbol"] == "BTCUSDT"), None)
+    before = btc_state(json.loads(trend.REPORT_PATH.read_text())) if trend.REPORT_PATH.exists() else None
     try:
         trend.download_all()
         _trend_state["message"] = "Rebuilding trend report…"
-        trend.run()
+        report = trend.run()
+        after = btc_state(report)
+        cfg = notify.config()
+        if cfg and cfg["enabled"] and cfg["trend_changes"] and before is not None and after is not None and after != before:
+            btc = next(x for x in report["current"]["rows"] if x["symbol"] == "BTCUSDT")
+            notify.send(("📈 <b>BTC entered a daily uptrend</b>" if after else "📉 <b>BTC left its daily uptrend</b>") +
+                        f" (EMA{report['params']['fast']}/{report['params']['slow']} rule, close {btc['close']:,.0f}). "
+                        f"In the backtest, holding BTC only during uptrends cut the worst drop from "
+                        f"{report['btc']['max_dd'] * 100:.0f}% to {report['btc_trend']['max_dd'] * 100:.0f}%. Not advice.")
         _trend_state.update(day=time.strftime("%Y-%m-%d", time.gmtime()), message="Up to date")
     except BaseException as e:
         _trend_state["message"] = f"Trend update failed: {e}"
@@ -541,7 +659,30 @@ def api_live_toggle():
 
 
 if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Pump Scanner dashboard")
+    ap.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to serve on a public server (needs a password)")
+    ap.add_argument("--port", type=int, default=5000)
+    ap.add_argument("--set-password", action="store_true", help="set or change the login password, then exit")
+    ap.add_argument("--setup-telegram", action="store_true", help="connect a Telegram bot for alerts, then exit")
+    args = ap.parse_args()
+
+    if args.set_password:
+        auth.set_password_cli()
+        sys.exit()
+    if args.setup_telegram:
+        notify.setup_cli()
+        sys.exit()
+    if args.host not in ("127.0.0.1", "localhost") and not auth.enabled():
+        sys.exit("Refusing to serve on a public address without a password. Run: python app.py --set-password")
+
     load_frames()
     threading.Thread(target=_live_loop, daemon=True).start()
-    print("Open http://127.0.0.1:5000")
-    app.run(host="127.0.0.1", port=5000, debug=False, threaded=True)
+    shown = "127.0.0.1" if args.host in ("0.0.0.0", "localhost") else args.host
+    print(f"Open http://{shown}:{args.port}" + ("  (login required)" if auth.enabled() else ""))
+    try:
+        from waitress import serve  # production server, if installed
+        serve(app, host=args.host, port=args.port, threads=8)
+    except ImportError:
+        app.run(host=args.host, port=args.port, debug=False, threaded=True)
