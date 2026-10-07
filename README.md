@@ -56,6 +56,15 @@ and refreshes the daily trend data after every daily close.
 Data lives in `data/` (not in git). Model and backtest reports live in `models/`
 and can be rebuilt with `signals.py`, `setups.py` and `trend.py`.
 
+## Login, Telegram, hosting
+
+```bash
+.venv\Scripts\python app.py --set-password      # require a password (stored hashed in data/)
+.venv\Scripts\python app.py --setup-telegram    # alerts to your phone via a Telegram bot
+```
+
+To run it 24/7 on a free Oracle Cloud server, follow [DEPLOY.md](DEPLOY.md).
+
 ## Notes
 
 - Tokenized stocks/ETFs (Binance trading group `TRD_GRP_261`, Bybit `xstocks`),
