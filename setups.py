@@ -29,7 +29,6 @@ import scanner
 import signals
 
 REPORT_PATH = Path(__file__).parent / "models" / "setups_report.json"
-BYBIT_REPORT_PATH = Path(__file__).parent / "models" / "setups_report_bybit.json"
 FEE = 0.001
 COOLDOWN_H = 6  # one alert per coin per setup per 6h
 
@@ -171,7 +170,7 @@ def summarize(rows):
 
 # --------------------------------------------------------------------------- #
 def backtest(params=None, workers=8, paths=None, report_path=None):
-    """`paths` defaults to the Binance candle CSVs; pass bybit.candle_paths() for Bybit."""
+    """`paths` defaults to every tracked coin's candle CSV."""
     paths = scanner.candle_paths() if paths is None else paths
     report_path = report_path or REPORT_PATH
     rng = np.random.default_rng(7)
@@ -273,20 +272,15 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--symbol")
     p.add_argument("--since", default="2026-01-01")
-    p.add_argument("--bybit", action="store_true", help="backtest the Bybit-only coins instead")
     args = p.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if args.symbol:
         show_symbol(args.symbol, args.since)
     else:
         t0 = time.time()
-        if args.bybit:
-            import bybit
-            r = backtest(paths=bybit.candle_paths(), report_path=BYBIT_REPORT_PATH)
-        else:
-            r = backtest()
+        r = backtest()
         print_report(r)
-        print(f"\nSaved {BYBIT_REPORT_PATH if args.bybit else REPORT_PATH} ({time.time() - t0:.0f}s)")
+        print(f"\nSaved {REPORT_PATH} ({time.time() - t0:.0f}s)")
 
 
 if __name__ == "__main__":

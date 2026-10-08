@@ -354,6 +354,38 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
 .warn.info { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 .warn.info svg { color: var(--accent); }
 .eq-card { margin-top: 12px; }
+.planner { display: grid; gap: 12px; margin-top: 12px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: start; }
+.pl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 16px; padding: 14px 16px 16px; align-items: end; }
+.pl-grid .field { flex-direction: column; align-items: stretch; gap: 5px; }
+.pl-grid input, .pl-grid select, .jr-tag {
+  height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); width: 100%; font-variant-numeric: tabular-nums;
+}
+.pl-coin { display: flex; gap: 6px; }
+.pl-coin .btn { height: 34px; flex: none; }
+.pl-order { padding: 12px 16px; font-size: 13.5px; color: var(--text-2); border-bottom: 1px solid var(--grid); }
+.pl-order b { color: var(--text); }
+.pl-stats .value.negt, .stat.negt .value { color: var(--bad-text); }
+.stat.pos .value { color: var(--good-text); }
+.pl-warn { display: grid; gap: 6px; padding: 12px 16px 16px; }
+.pl-w { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border-radius: 8px; font-size: 13px; border: 1px solid var(--border); margin-top: 12px; }
+.pl-warn .pl-w { margin-top: 0; }
+.pl-w > span { font-weight: 700; flex: none; width: 14px; text-align: center; }
+.pl-w.ok { background: color-mix(in srgb, var(--up) 10%, var(--surface)); }
+.pl-w.ok > span { color: var(--good-text); }
+.pl-w.warn { background: color-mix(in srgb, #fab219 12%, var(--surface)); }
+.pl-w.warn > span { color: #c98500; }
+.pl-w.bad { background: color-mix(in srgb, var(--neg) 12%, var(--surface)); }
+.pl-w.bad > span { color: var(--bad-text); }
+.rr-inputs { padding-bottom: 6px; }
+.rr-table table td, .rr-table table th { padding: 6px 10px; text-align: center; border-bottom: 1px solid var(--grid); }
+.rr-table tr.sel td { background: var(--accent-wash); font-weight: 600; }
+.jr-panel { margin-top: 12px; }
+.jr-mapf { min-width: 0; }
+.jr-swap { padding: 0 16px; }
+.jr-tag { height: 28px; width: 130px; }
+.jr-del { width: 28px; height: 28px; color: var(--muted); }
+#jrPreview table td, #jrPreview table th { padding: 5px 10px; border-bottom: 1px solid var(--grid); text-align: left; }
+@media (max-width: 1000px) { .planner { grid-template-columns: minmax(0, 1fr); } }
 .fut { border-top: 1px solid var(--border); }
 .fut-h { display: flex; align-items: baseline; gap: 8px; padding: 10px 16px 0; font-size: 13px; }
 .fut-h .sub { color: var(--muted); font-size: 12px; }
@@ -407,7 +439,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       Pump Scanner
     </div>
     <nav class="seg nav" id="nav" aria-label="View">
-      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="bybit">Bybit</button><button data-view="trend">Trend</button>
+      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button>
     </nav>
     <div class="meta" id="meta">Loading…</div>
     <div class="spacer"></div>
@@ -416,7 +448,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
         <div class="dl-bar"><div id="dlBar"></div></div>
         <div class="dl-text" id="dlText"></div>
       </div>
-      <button class="btn primary" id="dlBtn" title="Fetch the latest 15m candles from Binance">
+      <button class="btn primary" id="dlBtn" title="Fetch the latest 15m candles from Bybit">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
         Update data
       </button>
@@ -501,7 +533,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
             <label class="toggle field small-t"><input type="checkbox" id="indChk" checked> EMA / MACD</label>
             <button class="btn" id="dFocus">Zoom to event</button>
             <button class="btn" id="dAll">Full history</button>
-            <a class="btn" id="dBinance" target="_blank" rel="noopener noreferrer">Binance ↗</a>
+            <a class="btn" id="dTrade" target="_blank" rel="noopener noreferrer">Bybit ↗</a>
           </div>
         </div>
         <div class="legend">
@@ -624,8 +656,6 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       </div>
       <label class="toggle field"><input type="checkbox" id="tgTrend" data-setup="trend"> Trend</label>
       <label class="toggle field"><input type="checkbox" id="tgIgn" data-setup="ignition"> Ignition</label>
-      <label class="toggle field"><input type="checkbox" id="tgBinance" data-ex="binance"> Binance</label>
-      <label class="toggle field"><input type="checkbox" id="tgBybit" data-ex="bybit"> Bybit</label>
       <label class="toggle field"><input type="checkbox" id="tgBtc"> BTC daily trend changes</label>
       <button class="btn" id="tgTest">Send test</button>
     </div>
@@ -674,6 +704,9 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
     <div id="trWarnText"></div>
   </div>
   <div class="sig-toolbar">
+    <div class="field" title="Position size = target ÷ the coin's 60-day volatility, while its trend is up. Lower = smaller swings, smaller returns.">Volatility target
+      <div class="seg" id="trVt"><button data-v="0.25">25%</button><button data-v="0.4">40%</button><button data-v="0.6">60%</button></div>
+    </div>
     <span class="meta" id="trStatus"></span>
     <div class="spacer"></div>
     <button class="btn" id="trRefresh" title="Fetch the latest daily candles and rebuild the report">Update now</button>
@@ -702,10 +735,120 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
   </section>
 
   <section class="card sim">
+    <div class="card-h"><h2>Volatility targeting</h2><span class="sub">hold less when the market is wild · each coin's full Bybit history · fees in</span></div>
+    <div class="periods" id="trVtTable"></div>
+    <p class="explain" id="trVtNote"></p>
+  </section>
+
+  <section class="card sim">
     <div class="card-h"><h2>By period</h2><span class="sub">yearly return · worst drop inside the period — does it hold up in good and bad years?</span></div>
     <div class="periods" id="trPeriods"></div>
   </section>
   <p class="method" id="trMethod"></p>
+ </div>
+
+ <div id="viewPlanner" hidden>
+  <div class="warn info" role="note">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <div><strong>Size every trade by how much you risk, not by leverage.</strong> Pick the % of your account you accept to lose if the stop is hit (professionals use 1–2%);
+      the planner works out the position, the leverage that fits, Bybit's liquidation price and the costs. Leverage only changes the margin you lock up, not what you lose at your stop.</div>
+  </div>
+  <section class="planner">
+    <div class="card pl-form">
+      <div class="card-h"><h2>Trade</h2><span class="sub" id="plQuote"></span></div>
+      <div class="pl-grid">
+        <label class="field">Coin <span class="pl-coin"><input id="plCoin" list="plCoins" autocomplete="off" spellcheck="false" placeholder="e.g. SOLUSDT"><button class="btn" id="plLoad" type="button">Load price</button></span></label>
+        <datalist id="plCoins"></datalist>
+        <div class="field">Side <div class="seg" id="plSide"><button data-v="long" aria-pressed="true">Long</button><button data-v="short">Short</button></div></div>
+        <label class="field">Account balance (USDT) <input id="plBalance" type="number" min="0" step="any" value="50"></label>
+        <label class="field">Risk per trade (% of balance) <input id="plRisk" type="number" min="0.1" max="100" step="0.1" value="1"></label>
+        <label class="field">Entry price <input id="plEntry" type="number" min="0" step="any"></label>
+        <label class="field">Stop-loss price <input id="plStop" type="number" min="0" step="any"></label>
+        <label class="field">Take-profit price <input id="plTarget" type="number" min="0" step="any"></label>
+        <label class="field">Leverage (empty = lowest that fits) <input id="plLev" type="number" min="1" max="125" step="1" placeholder="auto"></label>
+        <label class="field">Entry order <select id="plFeeType"><option value="market">Market (taker 0.055%)</option><option value="limit">Limit (maker 0.02%)</option></select></label>
+        <label class="field">Expected hold (hours, for funding) <input id="plHold" type="number" min="0" step="1" value="8"></label>
+      </div>
+    </div>
+    <div class="card pl-result">
+      <div class="card-h"><h2>Plan</h2><span class="sub">stop-loss assumed to fill as a market order · liquidation is Bybit's isolated-margin estimate</span></div>
+      <div id="plOut"></div>
+    </div>
+  </section>
+  <section class="card sim">
+    <div class="card-h"><h2>Risk of ruin</h2><span class="sub">2,000 simulated traders with the same odds, each risking a fixed % of their current balance</span></div>
+    <div class="pl-grid rr-inputs">
+      <label class="field">Win rate (%) <input id="rrWin" type="number" min="1" max="99" step="1" value="50"></label>
+      <label class="field">Win size (R = multiples of the risk) <input id="rrPayoff" type="number" min="0.1" step="0.1" value="2"></label>
+      <label class="field">Risk per trade (%) <input id="rrRisk" type="number" min="0.1" max="50" step="0.1" value="1"></label>
+      <label class="field">Number of trades <input id="rrTrades" type="number" min="10" max="2000" step="10" value="100"></label>
+      <button class="btn" id="rrFromJournal" type="button" title="Use the win rate and win/loss sizes from your Journal">Use my journal stats</button>
+    </div>
+    <div class="stats" id="rrSummary"></div>
+    <div class="chart-body tall" id="rrChart"></div>
+    <p class="explain" id="rrKelly"></p>
+    <div class="periods rr-table" id="rrTable"></div>
+  </section>
+ </div>
+
+ <div id="viewJournal" hidden>
+  <div class="sig-toolbar">
+    <label class="btn primary" for="jrFile">Import Bybit CSV</label>
+    <input type="file" id="jrFile" accept=".csv,text/csv" hidden>
+    <button class="btn" id="jrAddBtn" type="button">Add trade by hand</button>
+    <button class="btn" id="jrExport" type="button">Export CSV</button>
+    <span class="meta" id="jrMsg"></span>
+    <div class="spacer"></div>
+    <button class="btn" id="jrClear" type="button">Delete all</button>
+  </div>
+  <div class="card jr-panel" id="jrImport" hidden>
+    <div class="card-h"><h2>Match the columns</h2><span class="sub">guessed from the file's headers · fix any that are wrong</span></div>
+    <div class="pl-grid" id="jrMap"></div>
+    <label class="toggle field jr-swap"><input type="checkbox" id="jrSwap"> Swap long/short</label>
+    <div class="periods" id="jrPreview"></div>
+    <p class="explain" id="jrImportMsg"></p>
+    <div class="sig-toolbar"><button class="btn primary" id="jrDoImport" type="button">Import</button><button class="btn" id="jrCancelImport" type="button">Cancel</button></div>
+  </div>
+  <div class="card jr-panel" id="jrAdd" hidden>
+    <div class="card-h"><h2>Add a closed trade</h2><span class="sub">leave P&amp;L empty to calculate it from prices × quantity (before fees)</span></div>
+    <div class="pl-grid">
+      <label class="field">Closed at <input id="jrAddTime" type="datetime-local"></label>
+      <label class="field">Coin <input id="jrAddSym" list="plCoins" placeholder="PRLUSDT"></label>
+      <label class="field">Side <select id="jrAddSide"><option value="long">Long</option><option value="short">Short</option></select></label>
+      <label class="field">Quantity (coins) <input id="jrAddQty" type="number" step="any"></label>
+      <label class="field">Entry price <input id="jrAddEntry" type="number" step="any"></label>
+      <label class="field">Exit price <input id="jrAddExit" type="number" step="any"></label>
+      <label class="field">P&amp;L (USDT) <input id="jrAddPnl" type="number" step="any"></label>
+      <label class="field">Leverage <input id="jrAddLev" type="number" step="1"></label>
+      <label class="field">Setup tag <input id="jrAddTag" placeholder="e.g. pump-day breakout"></label>
+      <label class="field">Note <input id="jrAddNote"></label>
+    </div>
+    <div class="sig-toolbar"><button class="btn primary" id="jrAddSave" type="button">Save trade</button></div>
+  </div>
+  <div class="notice on" id="jrEmpty">
+    <b>No trades yet.</b> On Bybit: <i>Orders → Derivatives → Closed P&amp;L → Export</i> (or Assets → Order history → Export), save the CSV, then click
+    <b>Import Bybit CSV</b>. Your trades stay on this computer (data/journal.json), never on GitHub.
+  </div>
+  <div id="jrBody" hidden>
+    <div class="pl-w" id="jrVerdict"></div>
+    <section class="kpis" id="jrKpis"></section>
+    <section class="card eq-card">
+      <div class="card-h"><h2>Cumulative P&amp;L</h2><span class="sub">after each closed trade, in order</span></div>
+      <div class="chart-body" id="jrEquity"></div>
+    </section>
+    <section class="charts2">
+      <div class="card"><div class="card-h"><h2>P&amp;L by coin</h2><span class="sub">12 biggest</span></div><div class="chart-body" id="jrCoin"></div></div>
+      <div class="card"><div class="card-h"><h2>P&amp;L by hour</h2><span class="sub" id="jrHourSub"></span></div><div class="chart-body" id="jrHour"></div></div>
+    </section>
+    <section class="charts2">
+      <div class="card"><div class="card-h"><h2>P&amp;L by weekday</h2></div><div class="chart-body" id="jrDay"></div></div>
+      <div class="card"><div class="card-h"><h2>P&amp;L by side and leverage</h2></div><div class="chart-body" id="jrSide"></div></div>
+    </section>
+    <section class="card sim">
+      <div class="card-h"><h2>Trades</h2><span class="sub" id="jrCount"></span></div>
+      <div class="table-scroll sig-scroll"><table><thead id="jrHead"></thead><tbody id="jrRows"></tbody></table></div>
+    </section>
+  </div>
  </div>
 </div>
 
@@ -777,6 +920,7 @@ function fmtDate(t, withTime = true) {
   return `${s}, ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 const base = (sym) => sym.replace(/USDT$/, "");
+const tradeUrl = (sym) => `https://www.bybit.com/trade/usdt/${encodeURIComponent(sym)}`;  // Bybit USDT perpetual
 function symNode(sym) {
   return el("span", { class: "sym" }, base(sym), el("span", { class: "q", text: "/USDT" }));
 }
@@ -793,7 +937,7 @@ async function loadScan() {
   }
   const notice = $("notice");
   if (!state.scan.pairs) {
-    notice.textContent = "No candle data yet. Click “Update data” to download 90 days of 15m candles from Binance (about 3–4 minutes).";
+    notice.textContent = "No candle data yet. Click “Update data” to download 90 days of 15m candles from Bybit (about 3–4 minutes).";
     notice.classList.add("on");
   } else notice.classList.remove("on");
   render();
@@ -1280,7 +1424,7 @@ function fitAll() {
 }
 
 function showDetail() {
-  $("dBinance").textContent = "Binance ↗";
+  $("dTrade").textContent = "Bybit ↗";
   if (state.view !== "alerts" && state.view !== "signals") { futToken++; $("dFut").hidden = true; }
   $("placeholder").hidden = true;
   $("detailBody").hidden = false;
@@ -1293,7 +1437,7 @@ async function selectEvent(e, scroll = true) {
   $("dTitle").replaceChildren(base(e.symbol), el("span", { class: "q", text: "/USDT" }));
   $("dPill").textContent = `${fmtPct(e.gain)} in ${fmtHours(e.hours_to_peak)}`;
   $("dFocus").hidden = false;
-  $("dBinance").href = `https://www.binance.com/en/trade/${encodeURIComponent(base(e.symbol))}_USDT?type=spot`;
+  $("dTrade").href = tradeUrl(e.symbol);
   const tp = Math.round(state.threshold * 100);
   const stats = [
     ["Entry", fmtPrice(e.entry_price), fmtDate(e.entry_time)],
@@ -1324,7 +1468,7 @@ async function showCoin(symbol) {
   $("dTitle").replaceChildren(base(symbol), el("span", { class: "q", text: "/USDT" }));
   $("dPill").textContent = evs.length ? `${evs.length} pump${evs.length === 1 ? "" : "s"} · best ${fmtPct(Math.max(...evs.map((e) => e.gain)))}` : "no pumps";
   $("dFocus").hidden = true;
-  $("dBinance").href = `https://www.binance.com/en/trade/${encodeURIComponent(base(symbol))}_USDT?type=spot`;
+  $("dTrade").href = tradeUrl(symbol);
   const data = await drawSymbol(symbol);
   if (state.coin !== symbol || state.selected) return;
   const last = data.c[data.c.length - 1], first = data.c[0];
@@ -1383,6 +1527,7 @@ document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("cli
 // Arrow keys step through the table
 document.addEventListener("keydown", (e) => {
   if (e.target instanceof Element && e.target.matches("input, select, textarea")) return;
+  if (state.view === "planner" || state.view === "journal") return;
   if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
   const step = e.key === "ArrowDown" ? 1 : -1;
   if (state.view === "trend") {
@@ -1629,7 +1774,7 @@ async function showSignalCoin(r, scroll = true) {
   $("dTitle").replaceChildren(base(r.symbol), el("span", { class: "q", text: "/USDT" }));
   $("dPill").textContent = `score ${r.score.toFixed(3)}${r.tier != null ? ` · top ${r.tier}% tier` : ""}`;
   $("dFocus").hidden = true;
-  $("dBinance").href = `https://www.binance.com/en/trade/${encodeURIComponent(base(r.symbol))}_USDT?type=spot`;
+  $("dTrade").href = tradeUrl(r.symbol);
   const stats = [
     ["Price", fmtPrice(r.price), fmtDate(r.time)],
     ["Change 4h", fmtFeat("ret_4h", r.ret_4h), ""],
@@ -1799,24 +1944,23 @@ $("trainBtn").addEventListener("click", async () => {
 // ---------- view switching
 function setView(v) {
   const navKey = v;
-  if (v === "bybit" || v === "alerts") {
-    if (al.exchange !== (v === "bybit" ? "bybit" : "binance")) al.sel = null;
-    al.exchange = v === "bybit" ? "bybit" : "binance";
-    v = "alerts";
-  }
   state.view = v;
-  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend");
+  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal");
   document.body.classList.add(`view-${v}`);
   $("viewPumps").hidden = v !== "pumps";
   $("viewSignals").hidden = v !== "signals";
   $("viewAlerts").hidden = v !== "alerts";
   $("viewTrend").hidden = v !== "trend";
+  $("viewPlanner").hidden = v !== "planner";
+  $("viewJournal").hidden = v !== "journal";
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === navKey)));
   // One chart instance, moved between the views
   const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot") }[v];
-  slot.append($("detail"));
+  if (slot) slot.append($("detail"));
   $("dFocus").textContent = v === "alerts" ? "Zoom to alert" : "Zoom to event";
   if (history.replaceState) history.replaceState(null, "", navKey === "pumps" ? "#" : `#${navKey}`);
+  if (v === "planner") { initPlanner(); return; }
+  if (v === "journal") { loadJournal(); return; }
   if (v === "signals") {
     if (sig.report === undefined) loadSignals();
     else {
@@ -1844,6 +1988,8 @@ function setView(v) {
 $("nav").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setView(b.dataset.view); });
 
 function refreshDetail() {
+  if (state.view === "journal") { if (jr.trades.length) renderJournal(); return; }
+  if (state.view === "planner") { computePlan(); return; }
   if (state.view === "trend") { if (tr.report) renderTrend(); if (tr.sel) showTrendCoin(tr.sel, false); }
   else if (state.view === "alerts") { if (al.sel) showAlert(al.sel, false); }
   else if (state.view === "signals") { if (sig.sel) showSignalCoin(sig.sel, false); }
@@ -1857,7 +2003,6 @@ const al = {
   data: null, rows: [], sel: null, seen: new Set(), first: true, unseen: 0,
   setup: "all", period: 24, minVol: 0, query: "", sort: { key: "time", dir: -1 },
   status: "all", notifyOn: "alert", confSeen: new Set(),
-  exchange: "binance",   // the Alerts tab shows Binance coins, the Bybit tab Bybit-only coins
   sound: false, audio: null, lastScan: undefined,  // undefined = not polled yet; null = server has not scanned yet
 };
 
@@ -1908,8 +2053,8 @@ function notify(list, confirmed) {
   if (al.sound) beep();
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   const lines = list.slice(0, 4).map((a) => confirmed
-    ? `${a.exchange === "bybit" ? "[Bybit] " : ""}${base(a.symbol)} · ${SETUP_LABEL[a.setup]} held 1h · ${signed(a.chg_1h)} since alert`
-    : `${a.exchange === "bybit" ? "[Bybit] " : ""}${base(a.symbol)} · ${SETUP_LABEL[a.setup]} · vol ${fmtFeat("vol_ratio_4h", a.vol_x)} · candle ${signed(a.chg)}`);
+    ? `${base(a.symbol)} · ${SETUP_LABEL[a.setup]} held 1h · ${signed(a.chg_1h)} since alert`
+    : `${base(a.symbol)} · ${SETUP_LABEL[a.setup]} · vol ${fmtFeat("vol_ratio_4h", a.vol_x)} · candle ${signed(a.chg)}`);
   const what = confirmed ? "confirmed" : "alert";
   const n = new Notification(list.length === 1 ? `${base(list[0].symbol)}/USDT ${what}` : `${list.length} new ${what}s`, {
     body: lines.join("\n") + (list.length > 4 ? `\n+${list.length - 4} more` : ""), tag: "pump-scanner",
@@ -1917,7 +2062,7 @@ function notify(list, confirmed) {
   n.onclick = () => {
     window.focus();
     const a = al.data.alerts.find((x) => x.id === list[0].id);
-    setView(a && a.exchange === "bybit" ? "bybit" : "alerts");
+    setView("alerts");
     if (a) showAlert(a);
   };
 }
@@ -1990,7 +2135,7 @@ const AL_COLS = [
     } },
   { key: "symbol", label: "Coin", cell: (a) => {
       const n = symNode(a.symbol);
-      if (a.tags && a.tags.length) n.append(el("span", { class: "risk-b", text: "risk", title: `Bybit flags this coin: ${a.tags.join(", ")}` }));
+      if (a.tags && a.tags.length) n.append(el("span", { class: "risk-b", text: "new/risky", title: "Bybit lists this coin in its Innovation zone (new or higher-risk listings)" }));
       return n;
     } },
   { key: "setup", label: "Setup", cell: (a) => el("span", { class: `setup-b ${a.setup}`, text: a.setup === "trend" ? "Trend" : "Ignition" }) },
@@ -2008,7 +2153,7 @@ function filteredAlerts() {
   if (!d) return [];
   const from = d.now - al.period * 3600;
   const q = al.query.trim().toUpperCase();
-  return d.alerts.filter((a) => (a.exchange || "binance") === al.exchange && a.time >= from && passesFilters(a) && (!q || a.symbol.includes(q))
+  return d.alerts.filter((a) => a.time >= from && passesFilters(a) && (!q || a.symbol.includes(q))
     && (al.status === "all" || statusOf(a) === al.status));
 }
 
@@ -2018,14 +2163,12 @@ function renderAlerts() {
   const rows = filteredAlerts();
   al.rows = sortRows(rows, al.sort);
 
-  // Track record from the 90-day backtest (Bybit-only coins have their own)
-  const st = al.exchange === "bybit" ? d.stats_bybit : d.stats;
+  // Track record from the 90-day backtest
+  const st = d.stats;
   const tr = (k) => (st && st[k]
     ? `${pctf(st[k].hit5, 0)} touched +5% within 24h, ${pctf(st[k].share_down_24h, 0)} were lower 24h later (~${Math.round(st[k].per_day)}/day)` : "");
   $("alWarnText").replaceChildren(
-    el("strong", { text: al.exchange === "bybit"
-      ? `Bybit-only coins (${d.bybit_coins} not listed on Binance, ≥ $250K/day). Alerts flag moves, not winners; these books are thinner, so expect more slippage. `
-      : "Alerts flag moves, not winners. " }),
+    el("strong", { text: `${d.coins} Bybit USDT perpetuals. Alerts flag moves, not winners. ` }),
     st ? `90-day backtest: Trend: ${tr("trend")}. Ignition: ${tr("ignition")}. ` +
          (st.trend_confirmed ? `Trend alerts that passed the 1h check (entered 1h later): ${tr("trend_confirmed")}. ` : "") +
          `Random entries: ${pctf(st.random.hit5, 0)} touched +5%, ${pctf(st.random.share_down_24h, 0)} lower after 24h. ` +
@@ -2054,7 +2197,7 @@ function renderAlerts() {
       st ? `${al.setup === "all" ? "trend / ignition · " : ""}${al.status === "confirmed" ? "confirmed only · " : ""}random ${pctf(st.random.share_down_24h, 0)}` : ""),
   );
 
-  $("alSub").textContent = `${al.exchange === "bybit" ? "Bybit · " : ""}${fmtInt(n)} alert${n === 1 ? "" : "s"} · results update every scan`;
+  $("alSub").textContent = `${fmtInt(n)} alert${n === 1 ? "" : "s"} · results update every scan`;
   const trh = el("tr");
   for (const c of AL_COLS) {
     const active = al.sort.key === c.key;
@@ -2104,12 +2247,9 @@ async function showAlert(a, scroll = true) {
   al.sel = a;
   showDetail();
   $("dTitle").replaceChildren(base(a.symbol), el("span", { class: "q", text: "/USDT" }));
-  const isBybit = a.exchange === "bybit";
-  $("dPill").textContent = `${isBybit ? "Bybit · " : ""}${SETUP_LABEL[a.setup]} · ${fmtDate(a.time + 900)} ${tzShort()}`;
+  $("dPill").textContent = `${SETUP_LABEL[a.setup]} · ${fmtDate(a.time + 900)} ${tzShort()}`;
   $("dFocus").hidden = false;
-  $("dBinance").href = isBybit ? `https://www.bybit.com/en/trade/spot/${encodeURIComponent(base(a.symbol))}/USDT`
-    : `https://www.binance.com/en/trade/${encodeURIComponent(base(a.symbol))}_USDT?type=spot`;
-  $("dBinance").textContent = isBybit ? "Bybit ↗" : "Binance ↗";
+  $("dTrade").href = tradeUrl(a.symbol);
   const stats = [
     ["Alert price", fmtPrice(a.price), "candle close"],
     ["Since alert", signed(a.now), a.hours != null ? `${fmtHours(a.hours)} ago` : ""],
@@ -2207,7 +2347,7 @@ async function loadFutures(symbol) {
   const box = $("dFut");
   const token = ++futToken;
   box.hidden = false;
-  $("dFutSub").textContent = "loading Binance perpetual data…";
+  $("dFutSub").textContent = "loading Bybit perpetual data…";
   $("dFutStats").replaceChildren();
   $("dFutNote").textContent = "";
   let ctx;
@@ -2216,7 +2356,7 @@ async function loadFutures(symbol) {
     ctx = r.ok ? await r.json() : null;
   } catch { ctx = null; }
   if (token !== futToken) return;  // the user has moved on to another coin
-  if (!ctx) { $("dFutSub").textContent = "no Binance perpetual futures for this coin"; return; }
+  if (!ctx) { $("dFutSub").textContent = "no futures data for this coin"; return; }
   const perDay = 24 / (ctx.funding_interval_h || 8);
   const ann = (f) => (f == null ? "" : `${signed(f * perDay * 365, 0)}/yr · every ${ctx.funding_interval_h || 8}h`);
   const fund = ctx.funding;
@@ -2224,7 +2364,7 @@ async function loadFutures(symbol) {
   if (ctx.oi_chg_24h != null) reads.push(ctx.oi_chg_24h > 0.1 ? "new money flowing into futures" : ctx.oi_chg_24h < -0.1 ? "futures positions closing" : "open interest steady");
   if (fund != null) reads.push(fund > 0.0003 ? "longs paying a lot (crowded)" : fund < 0 ? "shorts paying longs" : "funding normal");
   if (ctx.long_short != null) reads.push(ctx.long_short > 2 ? "most accounts long" : ctx.long_short < 0.8 ? "most accounts short" : "accounts balanced");
-  $("dFutSub").textContent = `Binance perpetual · live · ${reads.join(" · ")}`;
+  $("dFutSub").textContent = `Bybit perpetual · live · ${reads.join(" · ")}`;
   const stats = [
     ["Open interest 4h", ctx.oi_chg_4h == null ? "—" : signed(ctx.oi_chg_4h), ctx.oi_value ? fmtCompact(ctx.oi_value) : ""],
     ["Open interest 24h", ctx.oi_chg_24h == null ? "—" : signed(ctx.oi_chg_24h), "change"],
@@ -2236,12 +2376,15 @@ async function loadFutures(symbol) {
       el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
   $("dFutNote").textContent = FUT_NOTE;
 }
-// From the futures test on Trend alerts, Sep 9 – Oct 6 (Binance keeps only ~30 days of this history)
+// From the futures test on Trend alerts, Sep 9 – Oct 6 (run on Binance futures data before the switch to Bybit)
 const FUT_NOTE = "Context only. Tested on 1,819 Trend alerts (Sep 9 – Oct 6): no reading improved results in both halves of the month. " +
   "Rising open interest on alerts that passed the 1h check looked slightly better, but the sample is too small to trust.";
 
 // ------------------------------------------------------------------ trend view (daily)
-const tr = { report: null, state: null, rows: [], sel: null, sort: { key: "weight", dir: -1 }, eq: null, eqSeries: {}, timer: null };
+const tr = { report: null, state: null, rows: [], sel: null, sort: { key: "weight", dir: -1 }, eq: null, eqSeries: {}, timer: null, vt: 0.4 };
+try { const v = Number(localStorage.getItem("trVt")); if ([0.25, 0.4, 0.6].includes(v)) tr.vt = v; } catch {}
+// Suggested share of capital: target ÷ 60-day volatility while the trend is up, capped at 100%
+const vtSize = (x) => (x.in_trend && x.vol_60d ? Math.min(1, tr.vt / x.vol_60d) : 0);
 
 async function loadTrend() {
   let d;
@@ -2275,10 +2418,15 @@ function renderTrend() {
   const p = r.params, c = r.current;
   const f = (v) => (v == null ? "—" : signed(v, 0));
   const btcRow = c.rows.find((x) => x.symbol === "BTCUSDT");
+  // BTC figures over BTC's full history (the basket section starts later, once 10+ coins exist)
+  const vtB = r.vol_target && r.vol_target.coins.BTCUSDT;
+  const bRule = (vtB && vtB.rows.find((x) => x.label === "Trend rule")) || r.btc_trend;
+  const bHold = (vtB && vtB.rows.find((x) => x.label === "Hold")) || r.btc;
+  const bSince = vtB ? vtB.start.slice(0, 4) : r.start.slice(0, 4);
   $("trWarnText").replaceChildren(
     el("strong", { text: `Daily trend rule: hold a coin while EMA${p.fast} > EMA${p.slow} and price > EMA${p.slow} on daily closes. ` }),
-    `Backtest ${r.start.slice(0, 4)}–${r.end.slice(0, 4)}, fees included: on BTC alone it returned ${f(r.btc_trend.cagr)}/yr vs ${f(r.btc.cagr)} for holding, ` +
-    `cut the worst drop from ${f(r.btc.max_dd)} to ${f(r.btc_trend.max_dd)}, and was positive in every period. ` +
+    `Backtest ${bSince}–${r.end.slice(0, 4)}, fees included: on BTC alone it returned ${f(bRule.cagr)}/yr vs ${f(bHold.cagr)} for holding, ` +
+    `cut the worst drop from ${f(bHold.max_dd)} to ${f(bRule.max_dd)}, and was positive in every period. ` +
     `Spread over the top ${p.top_n} coins it did worse than BTC alone, and holding those coins blindly lost up to ${f(r.equal_weight.max_dd)}. ` +
     `Only coins listed today are in the data, which flatters every result. Not financial advice.`);
 
@@ -2287,13 +2435,14 @@ function renderTrend() {
       btcRow ? `${btcRow.in_trend ? "for" : "out for"} ${btcRow.days} days · ${signed(btcRow.vs_ema_slow)} vs EMA${p.slow}` : "", { hero: true }),
     kpi(`Top ${p.top_n} in uptrend`, `${c.in_trend} / ${c.universe}`, "market breadth"),
     kpi("Basket rule exposure", pctf(c.invested, 0), `share invested on ${fmtDate(Date.parse(c.date) / 1000, false)} close`),
-    kpi("BTC rule, per year", f(r.btc_trend.cagr), `holding BTC ${f(r.btc.cagr)} · since ${r.start.slice(0, 4)}`),
-    kpi("BTC rule, worst drop", f(r.btc_trend.max_dd), `holding BTC ${f(r.btc.max_dd)}`),
-    kpi("BTC rule, time in market", pctf(r.btc_trend.avg_exposure, 0), "out of the market the rest of the time"),
+    kpi("BTC rule, per year", f(bRule.cagr), `holding BTC ${f(bHold.cagr)} · since ${bSince}`),
+    kpi("BTC rule, worst drop", f(bRule.max_dd), `holding BTC ${f(bHold.max_dd)}`),
+    kpi(`BTC size at ${Math.round(tr.vt * 100)}% target`, btcRow ? pctf(vtSize(btcRow), 0) : "—",
+      btcRow ? (btcRow.in_trend ? `of capital · 60-day volatility ${pctf(btcRow.vol_60d, 0)}` : "trend is off → 0%") : ""),
   );
 
   // Coin table
-  tr.rows = sortRows(c.rows.map((x) => ({ ...x, edge: x.trend_sharpe != null ? x.trend_sharpe - x.hold_sharpe : null })), tr.sort);
+  tr.rows = sortRows(c.rows.map((x) => ({ ...x, vt_size: vtSize(x), edge: x.trend_sharpe != null ? x.trend_sharpe - x.hold_sharpe : null })), tr.sort);
   $("trSub").textContent = `top ${p.top_n} by 30-day volume · daily close ${fmtDate(Date.parse(c.date) / 1000, false)}`;
   const head = el("tr");
   for (const col of TR_COLS) {
@@ -2318,6 +2467,7 @@ function renderTrend() {
   $("trBody").replaceChildren(frag);
 
   renderEquity();
+  renderVt();
   renderPeriods();
   const g = r.grid.map((x) => `EMA${x.fast}/${x.slow}: ${f(x.cagr)}/yr, worst ${f(x.max_dd)}`).join(" · ");
   $("trMethod").textContent =
@@ -2337,6 +2487,8 @@ const TR_COLS = [
   { key: "ret_7d", label: "7d", cell: (x) => changeNode(x.ret_7d) },
   { key: "ret_30d", label: "30d", cell: (x) => changeNode(x.ret_30d) },
   { key: "vs_ema_slow", label: "vs EMA50", title: "close vs. the slow EMA — far above means stretched", cell: (x) => changeNode(x.vs_ema_slow) },
+  { key: "vt_size", label: "Size", title: "suggested share of capital at the selected volatility target (0 when the trend is off)",
+    cell: (x) => (x.vt_size ? el("b", { text: pctf(x.vt_size, 0) }) : el("span", { class: "dim", text: "0%" })) },
   { key: "weight", label: "Weight", title: "basket weight today (inverse-volatility)", cell: (x) => (x.weight ? pctf(x.weight, 1) : el("span", { class: "dim", text: "—" })) },
   { key: "edge", label: "Rule vs hold", title: "risk-adjusted return (Sharpe) of the trend rule vs. simply holding, over this coin's own history", cell: (x) =>
       x.trend_sharpe == null ? el("span", { class: "dim", text: "<1y data" })
@@ -2361,7 +2513,7 @@ async function showTrendCoin(x, scroll = true) {
   $("dTitle").replaceChildren(base(x.symbol), el("span", { class: "q", text: "/USDT · daily" }));
   $("dPill").textContent = x.in_trend ? `Uptrend for ${x.days} days` : `No uptrend (${x.days} days)`;
   $("dFocus").hidden = true;
-  $("dBinance").href = `https://www.binance.com/en/trade/${encodeURIComponent(base(x.symbol))}_USDT?type=spot`;
+  $("dTrade").href = tradeUrl(x.symbol);
   const f = (v) => (v == null ? "—" : signed(v, 0));
   const stats = [
     ["Close", fmtPrice(x.close), fmtDate(Date.parse(tr.report.current.date) / 1000, false)],
@@ -2369,7 +2521,7 @@ async function showTrendCoin(x, scroll = true) {
     ["30 days", signed(x.ret_30d), ""],
     [`vs EMA${p.slow}`, signed(x.vs_ema_slow), x.vs_ema_slow > 0.25 ? "stretched" : ""],
     ["Volatility", pctf(x.volatility, 0), "per year"],
-    ["Basket weight", x.weight ? pctf(x.weight, 1) : "—", "today"],
+    [`Size at ${Math.round(tr.vt * 100)}% target`, pctf(vtSize(x), 0), x.in_trend ? `60-day volatility ${pctf(x.vol_60d, 0)}` : "trend is off"],
     ["Rule on this coin", x.trend_cagr == null ? "—" : `${f(x.trend_cagr)}/yr`, x.hold_cagr == null ? "under 1 year of data" : `holding ${f(x.hold_cagr)}/yr`],
     ["Worst drop with rule", x.trend_dd == null ? "—" : f(x.trend_dd), x.hold_dd == null ? "" : `holding ${f(x.hold_dd)}`],
   ];
@@ -2401,6 +2553,7 @@ async function showTrendCoin(x, scroll = true) {
 // ---------- equity curves (log scale) with a crosshair readout of every series
 const EQ_SERIES = [
   { key: "btc_trend", label: "BTC with trend rule", color: "--accent", width: 2, style: 0 },
+  { key: "btc_trend_vt40", label: "BTC trend + 40% vol target", color: "--ema50", width: 2, style: 0 },
   { key: "btc", label: "Hold BTC", color: "--text-2", width: 1, style: 0 },
   { key: "strategy", label: "Top-30 basket with rule", color: "--peak", width: 2, style: 0 },
   { key: "equal_weight", label: "Hold top-30 basket", color: "--muted", width: 1, style: 2 },
@@ -2446,6 +2599,39 @@ function eqReadout(t, vals) {
   out.textContent = `${MON[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}: ${parts.join(" · ")}`;
 }
 
+function renderVt() {
+  const v = tr.report.vol_target;
+  $("trVt").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.v) === tr.vt)));
+  if (!v) { $("trVtTable").replaceChildren(); return; }
+  const coins = Object.entries(v.coins);
+  const head = el("tr", {}, el("th", { text: "" }), ...coins.map(([sym, c]) => el("th", { text: `${base(sym)} (since ${c.start.slice(0, 4)})` })));
+  const labels = coins[0][1].rows.map((x) => x.label);
+  const maxAbs = Math.max(0.01, ...coins.flatMap(([, c]) => c.rows.map((x) => Math.abs(x.cagr || 0))));
+  const wash = (val) => `color-mix(in srgb, var(${val >= 0 ? "--accent" : "--neg"}) ${Math.round(8 + 50 * Math.min(1, Math.abs(val) / maxAbs))}%, transparent)`;
+  const body = labels.map((lab) => {
+    const selected = lab.endsWith(`${Math.round(tr.vt * 100)}%`);
+    return el("tr", {}, el("td", { class: "rowh", text: selected ? `${lab}  ◀ selected` : lab }), ...coins.map(([, c]) => {
+      const x = c.rows.find((y) => y.label === lab) || {};
+      return el("td", {}, el("div", { class: "sim-cell", style: `background:${wash(x.cagr || 0)}${selected ? ";outline:2px solid var(--accent)" : ""}` },
+        el("b", { text: `${signed(x.cagr || 0, 0)}/yr` }),
+        el("small", { text: `worst ${signed(x.max_dd || 0, 0)} · Sharpe ${(x.sharpe || 0).toFixed(2)}` })));
+    }));
+  });
+  $("trVtTable").replaceChildren(el("table", {}, el("thead", {}, head), el("tbody", {}, ...body)));
+  $("trVtNote").textContent =
+    `How it works: while a coin's daily trend is up, hold target ÷ its ${v.vol_days}-day volatility of your capital (max 100%), else nothing. ` +
+    `On BTC it cut the worst drop sharply for a similar return per unit of risk. On ETH, Bybit's shorter history (2021+) was a weak period: ` +
+    `the trend rule alone didn't help there, and volatility targeting only limited the damage. Past results, not a promise.`;
+}
+
+$("trVt").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  tr.vt = Number(b.dataset.v);
+  try { localStorage.setItem("trVt", String(tr.vt)); } catch {}
+  if (tr.report) { renderTrend(); if (tr.sel) showTrendCoin(tr.rows.find((x) => x.symbol === tr.sel.symbol) || tr.sel, false); }
+});
+
 function renderPeriods() {
   const r = tr.report;
   const cols = [["btc_trend", "BTC with rule"], ["btc", "Hold BTC"], [`ema${r.params.fast}/${r.params.slow}`, "Basket with rule"], ["equal_weight", "Hold basket"]];
@@ -2475,6 +2661,13 @@ $("trRefresh").addEventListener("click", async () => {
 let trResize;
 new ResizeObserver(() => { clearTimeout(trResize); trResize = setTimeout(() => state.view === "trend" && tr.report && renderEquity(), 100); }).observe($("eqChart"));
 setInterval(() => { if (state.view === "trend") loadTrend(); }, 5 * 60 * 1000);
+let plResize;
+const plResizeObs = new ResizeObserver(() => { clearTimeout(plResize); plResize = setTimeout(() => {
+  if (state.view === "planner") simulateRuin();
+  if (state.view === "journal" && jr.trades.length) renderJournal();
+}, 120); });
+plResizeObs.observe($("rrChart"));
+plResizeObs.observe($("jrEquity"));
 
 // ------------------------------------------------------------------ login + Telegram
 // Any API call answered 401 means the session expired: go to the login page.
@@ -2501,7 +2694,6 @@ function renderTg() {
   $("tgEnabled").checked = tg.enabled;
   $("tgEvents").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === tg.events)));
   for (const id of ["tgTrend", "tgIgn"]) $(id).checked = tg.setups.includes($(id).dataset.setup);
-  for (const id of ["tgBinance", "tgBybit"]) $(id).checked = tg.exchanges.includes($(id).dataset.ex);
   $("tgBtc").checked = tg.trend_changes;
 }
 async function loadTg() {
@@ -2523,8 +2715,6 @@ $("tgEnabled").addEventListener("change", (e) => saveTg({ enabled: e.target.chec
 $("tgEvents").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ events: b.dataset.v }); });
 for (const id of ["tgTrend", "tgIgn"]) $(id).addEventListener("change", () =>
   saveTg({ setups: ["tgTrend", "tgIgn"].filter((x) => $(x).checked).map((x) => $(x).dataset.setup) }));
-for (const id of ["tgBinance", "tgBybit"]) $(id).addEventListener("change", () =>
-  saveTg({ exchanges: ["tgBinance", "tgBybit"].filter((x) => $(x).checked).map((x) => $(x).dataset.ex) }));
 $("tgBtc").addEventListener("change", (e) => saveTg({ trend_changes: e.target.checked }));
 $("tgTest").addEventListener("click", async () => {
   $("tgTest").disabled = true;
@@ -2533,6 +2723,542 @@ $("tgTest").addEventListener("click", async () => {
   setTimeout(() => { $("tgTest").textContent = "Send test"; $("tgTest").disabled = false; }, 3000);
 });
 loadTg();
+
+// ------------------------------------------------------------------ shared helpers (planner + journal)
+const fmtUsd = (v, sign = false) => {
+  if (v == null || Number.isNaN(v)) return "—";
+  const a = Math.abs(v);
+  const s = a >= 1000 ? a.toLocaleString("en-US", { maximumFractionDigits: 0 }) : a.toFixed(a < 10 ? 2 : 1);
+  return `${v < 0 ? "−" : sign ? "+" : ""}$${s}`;
+};
+const num = (id) => { const v = parseFloat(String($(id).value).replace(",", ".")); return Number.isFinite(v) ? v : null; };
+const store = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+const recall = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+
+// ------------------------------------------------------------------ planner
+const pl = { quote: null, side: "long", order: "market", coins: [] };
+const TAKER = 0.00055, MAKER = 0.0002;  // Bybit non-VIP perpetual fees
+
+async function initPlanner() {
+  if (!pl.coins.length) {
+    try { pl.coins = await (await fetch("/api/symbols")).json(); } catch { pl.coins = []; }
+    $("plCoins").replaceChildren(...pl.coins.map((s) => el("option", { value: s })));
+  }
+  for (const id of ["plBalance", "plRisk", "plFeeType"]) { const v = recall(id); if (v != null && $(id)) $(id).value = v; }
+  if (!$("plCoin").value) { $("plCoin").value = recall("plCoin") || "BTCUSDT"; await loadQuote(); }
+  computePlan();
+}
+
+async function loadQuote() {
+  const sym = $("plCoin").value.trim().toUpperCase();
+  if (!sym) return;
+  $("plQuote").textContent = "loading Bybit price…";
+  try {
+    const r = await fetch(`/api/quote/${encodeURIComponent(sym)}`);
+    if (!r.ok) throw new Error(r.status === 404 ? "not a tracked Bybit perpetual" : `HTTP ${r.status}`);
+    pl.quote = await r.json();
+  } catch (e) {
+    pl.quote = null;
+    $("plQuote").textContent = `Couldn't load ${sym}: ${e.message}`;
+    computePlan();
+    return;
+  }
+  store("plCoin", sym);
+  const q = pl.quote;
+  $("plQuote").textContent = `${base(sym)}: ${fmtPrice(q.price)} (${signed(q.change_24h)} 24h) · funding ${(q.funding * 100).toFixed(4)}% every ${q.funding_interval_h}h · max ${q.max_leverage}×` +
+    (q.tags.length ? " · Innovation zone (new/risky)" : "");
+  $("plEntry").value = q.price;
+  if (!num("plStop")) {
+    $("plStop").value = +(q.price * (pl.side === "long" ? 0.98 : 1.02)).toPrecision(5);
+    $("plTarget").value = +(q.price * (pl.side === "long" ? 1.04 : 0.96)).toPrecision(5);
+  }
+  computePlan();
+}
+
+function computePlan() {
+  const out = $("plOut"), warn = [];
+  const bal = num("plBalance"), riskPct = num("plRisk"), entry = num("plEntry"), stop = num("plStop"), tgt = num("plTarget");
+  const levIn = num("plLev"), hold = num("plHold") || 0, q = pl.quote;
+  ["plBalance", "plRisk"].forEach((id) => store(id, $(id).value));
+  store("plFeeType", $("plFeeType").value);
+  const s = pl.side === "long" ? 1 : -1;
+  if (!bal || !riskPct || !entry || !stop) { out.replaceChildren(el("p", { class: "dim", text: "Enter balance, risk, entry and stop-loss." })); return null; }
+  if ((stop - entry) * s >= 0) { out.replaceChildren(el("p", { class: "negt", text: `For a ${pl.side}, the stop-loss must be ${s > 0 ? "below" : "above"} the entry.` })); return null; }
+  if (tgt && (tgt - entry) * s <= 0) warn.push(["bad", `The take-profit is on the wrong side of the entry for a ${pl.side}.`]);
+
+  const feeIn = $("plFeeType").value === "limit" ? MAKER : TAKER, feeStop = TAKER, feeTp = $("plFeeType").value === "limit" ? MAKER : TAKER;
+  const riskAmt = bal * riskPct / 100;
+  const lossPerCoin = Math.abs(entry - stop) + entry * feeIn + stop * feeStop;
+  const idealQty = riskAmt / lossPerCoin;
+  let qty = idealQty;
+  if (q) qty = Math.floor(qty / q.qty_step) * q.qty_step;
+  if (q && qty < q.min_qty || qty <= 0 || (q && qty * entry < q.min_notional)) {
+    // The risk-based size is below Bybit's smallest order: say so plainly instead of showing zeros
+    const minQty = q ? Math.max(q.min_qty, Math.ceil(q.min_notional / entry / q.qty_step) * q.qty_step) : 0;
+    const minRisk = minQty * lossPerCoin;
+    out.replaceChildren(el("div", { class: "pl-warn" }, el("div", { class: "pl-w bad" }, el("span", { text: "✗" }),
+      `Risking ${fmtUsd(riskAmt)} with a stop ${pctf(Math.abs(entry - stop) / entry, 1)} away means a position of about ${fmtUsd(idealQty * entry)}, ` +
+      `but Bybit's smallest ${q ? base(q.symbol) : ""} order is ${+minQty.toPrecision(6)} coins (${fmtUsd(minQty * entry)}). ` +
+      `The smallest trade here would risk ${fmtUsd(minRisk)} (${pctf(minRisk / bal, 1)} of your balance). ` +
+      "Options: a coin with a smaller minimum order, a tighter stop, or accept the larger risk knowingly.")));
+    return null;
+  }
+  const notional = qty * entry;
+  const autoLev = Math.max(1, Math.ceil(notional / (bal * 0.95)));
+  const lev = levIn || autoLev;
+  const margin = notional / lev;
+  const tier = q ? (q.tiers.find((t) => t.limit >= notional) || q.tiers[q.tiers.length - 1]) : { mmr: 0.005, max_leverage: 100 };
+  const liq = s > 0 ? entry * (1 - 1 / lev + tier.mmr) : entry * (1 + 1 / lev - tier.mmr);
+  const lossAtStop = qty * lossPerCoin;
+  const profit = tgt ? qty * (Math.abs(tgt - entry) - entry * feeIn - tgt * feeTp) : null;
+  const rr = profit != null ? profit / lossAtStop : null;
+  const fundingCost = q ? notional * q.funding * (hold / q.funding_interval_h) * s : 0;  // + = you pay
+  const beWin = profit != null ? lossAtStop / (lossAtStop + profit) : null;
+
+  if (riskPct > 2) warn.push(["bad", `Risking ${riskPct}% per trade is above the 1–2% that keeps the risk of ruin low. Ten losses in a row would cost ${pctf(1 - (1 - riskPct / 100) ** 10, 0)} of the account.`]);
+  if ((s > 0 && liq >= stop) || (s < 0 && liq <= stop)) warn.push(["bad", `Liquidation (${fmtPrice(liq)}) comes BEFORE your stop-loss. Lower the leverage or move the stop.`]);
+  else if (Math.abs(liq - stop) / entry < 0.01) warn.push(["warn", "The liquidation price is very close to your stop; a fast wick could liquidate you first."]);
+  if (margin > bal) warn.push(["bad", `Margin needed (${fmtUsd(margin)}) is more than the balance. Raise the leverage or lower the risk.`]);
+  if (q && lev > tier.max_leverage) warn.push(["bad", `Bybit allows at most ${tier.max_leverage}× for this position size.`]);
+  if (q && notional < Math.max(q.min_notional, q.min_qty * entry)) warn.push(["bad", `Position too small for Bybit (minimum about ${fmtUsd(Math.max(q.min_notional, q.min_qty * entry))}).`]);
+  const feesTotal = qty * (entry * feeIn + stop * feeStop);
+  if (feesTotal > 0.2 * lossAtStop) warn.push(["warn", `Fees are ${pctf(feesTotal / lossAtStop, 0)} of your risk: the stop is very tight for the costs.`]);
+  if (rr != null && rr < 1) warn.push(["warn", `Reward is smaller than risk (${rr.toFixed(2)}R). You'd need to win ${pctf(beWin, 0)} of trades just to break even.`]);
+  if (q && q.tags.length) warn.push(["warn", "Innovation-zone coin: thin order book, large wicks, wider slippage than planned."]);
+
+  const tile = (label, value, note, cls = "") => el("div", { class: `stat ${cls}` }, el("div", { class: "label", text: label }),
+    el("div", { class: "value" }, value, note ? el("small", { text: ` · ${note}` }) : null));
+  out.replaceChildren(
+    el("div", { class: "pl-order" },
+      el("b", { text: `Bybit order: ${pl.side === "long" ? "Buy / Long" : "Sell / Short"} ${+qty.toPrecision(6)} ${q ? base(q.symbol) : ""}` }),
+      ` · leverage ${lev}× ${levIn ? "" : "(auto: lowest that fits)"} · isolated margin · stop ${fmtPrice(stop)}` + (tgt ? ` · take profit ${fmtPrice(tgt)}` : "")),
+    el("div", { class: "stats pl-stats" },
+      tile("Position size", fmtUsd(notional), `${+qty.toPrecision(6)} coins`),
+      tile("Margin used", fmtUsd(margin), `${pctf(margin / bal, 0)} of balance`),
+      tile("Loss if stopped", fmtUsd(-lossAtStop), `${pctf(lossAtStop / bal, 1)} of balance · ROI ${signed(-lossAtStop / margin, 0)}`, "negt"),
+      tile("Profit at target", profit != null ? fmtUsd(profit, true) : "—", profit != null ? `${pctf(profit / bal, 1)} of balance · ROI ${signed(profit / margin, 0)}` : "set a target", "pos"),
+      tile("Reward : risk", rr != null ? `${rr.toFixed(2)}R` : "—", beWin != null ? `break-even win rate ${pctf(beWin, 0)}` : ""),
+      tile("Liquidation (approx.)", fmtPrice(liq), `${signed((liq - entry) / entry)} from entry · MMR ${pctf(tier.mmr, 1)}`),
+      tile("Fees (in + out)", fmtUsd(qty * (entry * feeIn + (tgt || stop) * feeTp)), $("plFeeType").value === "limit" ? "maker 0.02%" : "taker 0.055%"),
+      tile(`Funding over ${hold}h`, q ? fmtUsd(-fundingCost, true) : "—", q ? (fundingCost > 0 ? "you pay" : fundingCost < 0 ? "you receive" : "") : "")),
+    el("div", { class: "pl-warn" }, ...(warn.length ? warn : [["ok", "No problems found with this plan."]]).map(([k, t]) =>
+      el("div", { class: `pl-w ${k}` }, el("span", { text: k === "ok" ? "✓" : k === "warn" ? "!" : "✗" }), t))),
+  );
+  // feed the risk-of-ruin simulation
+  if (rr != null && !$("rrPayoff").dataset.touched) $("rrPayoff").value = rr.toFixed(2);
+  if (!$("rrRisk").dataset.touched) $("rrRisk").value = riskPct;
+  simulateRuin();
+  return { riskAmt, qty, notional, lev, liq, rr };
+}
+
+// ---------- risk of ruin: many traders with the same odds, fixed % risk per trade
+function simulateRuin() {
+  const p = (num("rrWin") ?? 50) / 100, b = num("rrPayoff") ?? 1, f = (num("rrRisk") ?? 1) / 100, N = Math.round(num("rrTrades") ?? 100);
+  if (!(p > 0 && p < 1 && b > 0 && f > 0 && f < 1 && N > 0 && N <= 2000)) return;
+  const sim = (frac, paths = 2000) => {
+    const finals = new Float64Array(paths), ruined = { dd50: 0 }, bands = Array.from({ length: N + 1 }, () => []);
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);  // repeatable
+    for (let k = 0; k < paths; k++) {
+      let bal = 1, peak = 1, hit = false;
+      if (bands) bands[0].push(1);
+      for (let i = 1; i <= N; i++) {
+        bal *= rnd() < p ? 1 + frac * b : 1 - frac;
+        peak = Math.max(peak, bal);
+        if (bal <= 0.5 * peak) hit = true;
+        bands[i].push(bal);
+      }
+      finals[k] = bal;
+      if (hit) ruined.dd50++;
+    }
+    const sorted = Array.from(finals).sort((x, y) => x - y);
+    const q = (arr, x) => arr[Math.min(arr.length - 1, Math.floor(x * arr.length))];
+    return {
+      median: q(sorted, 0.5), lost: sorted.filter((x) => x < 1).length / paths, dd50: ruined.dd50 / paths,
+      bands: bands.map((arr) => { arr.sort((x, y) => x - y); return [q(arr, 0.05), q(arr, 0.25), q(arr, 0.5), q(arr, 0.75), q(arr, 0.95)]; }),
+    };
+  };
+  const main = sim(f);
+  const edge = p * b - (1 - p);  // expected R per trade
+  const kelly = p - (1 - p) / b;
+  $("rrSummary").replaceChildren(
+    el("div", { class: "stat" }, el("div", { class: "label", text: "Expected per trade" }),
+      el("div", { class: `value ${edge > 0 ? "pos" : "negt"}`, text: `${edge >= 0 ? "+" : ""}${edge.toFixed(2)}R` })),
+    el("div", { class: "stat" }, el("div", { class: "label", text: `Typical balance after ${N} trades` }),
+      el("div", { class: `value ${main.median >= 1 ? "pos" : "negt"}`, text: signed(main.median - 1, 0) })),
+    el("div", { class: "stat" }, el("div", { class: "label", text: "Ended below start" }), el("div", { class: "value", text: pctf(main.lost, 0) })),
+    el("div", { class: "stat" }, el("div", { class: "label", text: "Lost half at some point" }), el("div", { class: "value", text: pctf(main.dd50, 0) })),
+  );
+  $("rrKelly").textContent = kelly > 0
+    ? `With these odds the mathematically fastest-growing risk is ${pctf(kelly, 1)} per trade ("Kelly"); professionals use a quarter to a half of it (${pctf(kelly / 4, 1)}–${pctf(kelly / 2, 1)}) because real win rates are uncertain.`
+    : "With these odds there is no edge: every risk size loses on average, and bigger sizes just lose faster.";
+  drawBands(main.bands);
+  const sizes = [0.5, 1, 2, 5, 10, 25];
+  $("rrTable").replaceChildren(el("table", {},
+    el("thead", {}, el("tr", {}, el("th", { text: "Risk per trade" }), el("th", { text: `Typical result after ${N}` }), el("th", { text: "Ended below start" }), el("th", { text: "Lost half at some point" }))),
+    el("tbody", {}, ...sizes.map((r) => {
+      const x = sim(r / 100, 1000);
+      return el("tr", { class: Math.abs(r / 100 - f) < 1e-9 ? "sel" : "" }, el("td", { text: `${r}%` }),
+        el("td", { class: x.median >= 1 ? "pos" : "negt", text: signed(x.median - 1, 0) }), el("td", { text: pctf(x.lost, 0) }),
+        el("td", { class: x.dd50 > 0.25 ? "negt" : "", text: pctf(x.dd50, 0) }));
+    }))));
+}
+
+function drawBands(bands) {
+  const host = $("rrChart");
+  host.replaceChildren();
+  const W = host.clientWidth - 24, H = host.clientHeight - 16;
+  if (W <= 0) return;
+  const pad = { l: 46, r: 8, t: 10, b: 20 }, iw = W - pad.l - pad.r, ih = H - pad.t - pad.b, N = bands.length - 1;
+  const hi = Math.max(1.05, ...bands.map((b) => b[4])), lo = Math.min(0.95, ...bands.map((b) => b[0]));
+  const lg = (v) => Math.log(Math.max(v, 1e-4));
+  const X = (i) => pad.l + (i / N) * iw, Y = (v) => pad.t + (lg(hi) - lg(v)) / (lg(hi) - lg(lo)) * ih;
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  for (const v of [lo, 0.5, 1, 2, hi].filter((v, i, a) => v >= lo && v <= hi && a.indexOf(v) === i)) {
+    s.append(svg("line", { x1: pad.l, x2: W - pad.r, y1: Y(v), y2: Y(v), class: v === 1 ? "baseline" : "gridline" }));
+    const t = svg("text", { x: pad.l - 6, y: Y(v) + 3.5, "text-anchor": "end" });
+    t.textContent = `${signed(v - 1, 0)}`;
+    s.append(t);
+  }
+  const area = (a, b) => `M${bands.map((x, i) => `${X(i)},${Y(x[a])}`).join("L")}L${bands.map((x, i) => `${X(N - i)},${Y(bands[N - i][b])}`).join("L")}Z`;
+  s.append(svg("path", { d: area(0, 4), fill: "var(--accent)", opacity: 0.12 }));
+  s.append(svg("path", { d: area(1, 3), fill: "var(--accent)", opacity: 0.22 }));
+  s.append(svg("path", { d: `M${bands.map((x, i) => `${X(i)},${Y(x[2])}`).join("L")}`, fill: "none", stroke: "var(--accent)", "stroke-width": 2 }));
+  for (const [i, lab] of [[0, "0"], [N, String(N)]]) {
+    const t = svg("text", { x: X(i), y: H - 4, "text-anchor": i ? "end" : "start" });
+    t.textContent = `${lab} trades`;
+    s.append(t);
+  }
+  const hit = svg("rect", { x: pad.l, y: pad.t, width: iw, height: ih, fill: "transparent" });
+  hit.addEventListener("pointermove", (e) => {
+    const r = host.getBoundingClientRect(), i = Math.max(0, Math.min(N, Math.round((e.clientX - r.left - 12 - pad.l) / iw * N)));
+    const b = bands[i];
+    showTip(e, [`${signed(b[2] - 1, 0)} typical`, `after ${i} trades · middle half ${signed(b[1] - 1, 0)} to ${signed(b[3] - 1, 0)} · 90% between ${signed(b[0] - 1, 0)} and ${signed(b[4] - 1, 0)}`]);
+  });
+  hit.addEventListener("pointerleave", hideTip);
+  s.append(hit);
+  host.append(s);
+}
+
+$("plSide").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  pl.side = b.dataset.v;
+  $("plSide").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  const entry = num("plEntry");
+  if (entry) {  // mirror the stop and target around the entry
+    const st = num("plStop"), tg = num("plTarget");
+    if (st) $("plStop").value = +(2 * entry - st).toPrecision(6);
+    if (tg) $("plTarget").value = +(2 * entry - tg).toPrecision(6);
+  }
+  computePlan();
+});
+$("plLoad").addEventListener("click", loadQuote);
+$("plCoin").addEventListener("change", loadQuote);
+for (const id of ["plBalance", "plRisk", "plEntry", "plStop", "plTarget", "plLev", "plHold", "plFeeType"]) $(id).addEventListener("input", computePlan);
+for (const id of ["rrWin", "rrPayoff", "rrRisk", "rrTrades"]) $(id).addEventListener("input", (e) => { e.target.dataset.touched = "1"; simulateRuin(); });
+$("rrFromJournal").addEventListener("click", () => {
+  const s = jr.stats;
+  if (!s || s.n < 5) { $("rrKelly").textContent = "Add at least 5 trades in the Journal first."; return; }
+  $("rrWin").value = (s.winRate * 100).toFixed(1); $("rrWin").dataset.touched = "1";
+  $("rrPayoff").value = s.payoff.toFixed(2); $("rrPayoff").dataset.touched = "1";
+  simulateRuin();
+});
+
+// ------------------------------------------------------------------ journal
+const jr = { trades: [], stats: null, sort: { key: "time", dir: -1 }, csv: null };
+
+async function loadJournal() {
+  try { jr.trades = await (await fetch("/api/journal")).json(); } catch { jr.trades = []; }
+  renderJournal();
+}
+
+function journalStats(t) {
+  const n = t.length;
+  if (!n) return { n: 0 };
+  const p = t.map((x) => x.pnl), wins = p.filter((x) => x > 0), losses = p.filter((x) => x <= 0);
+  const mean = p.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(p.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, n - 1));
+  const avgW = wins.length ? wins.reduce((a, b) => a + b, 0) / wins.length : 0;
+  const avgL = losses.length ? -losses.reduce((a, b) => a + b, 0) / losses.length : 0;
+  let cum = 0, peak = 0, dd = 0, streak = 0, worst = 0;
+  const curve = [...t].sort((a, b) => a.time - b.time).map((x) => {
+    cum += x.pnl; peak = Math.max(peak, cum); dd = Math.min(dd, cum - peak);
+    streak = x.pnl <= 0 ? streak + 1 : 0; worst = Math.max(worst, streak);
+    return [x.time, cum];
+  });
+  return {
+    n, total: cum, mean, ci: 1.96 * sd / Math.sqrt(n), winRate: wins.length / n, avgW, avgL,
+    payoff: avgL ? avgW / avgL : 0, pf: avgL ? wins.reduce((a, b) => a + b, 0) / -losses.reduce((a, b) => a + b, 0) : Infinity,
+    maxDD: dd, streak: worst, curve, best: Math.max(...p), worstTrade: Math.min(...p),
+  };
+}
+
+function renderJournal() {
+  const t = jr.trades, s = (jr.stats = journalStats(t));
+  $("jrEmpty").hidden = t.length > 0;
+  $("jrBody").hidden = !t.length;
+  if (!t.length) return;
+  const verdict = s.n < 30 ? ["info", `Only ${s.n} trades: too few to judge. Keep logging: 30+ trades for a first read, 100+ before trusting it.`]
+    : s.mean - s.ci > 0 ? ["good", `Your trades show a positive edge: ${fmtUsd(s.mean, true)} per trade on average (95% range ${fmtUsd(s.mean - s.ci, true)} to ${fmtUsd(s.mean + s.ci, true)}). Keep doing what you're doing and keep sizes sane.`]
+    : s.mean + s.ci < 0 ? ["bad", `Your trades lose on average: ${fmtUsd(s.mean, true)} per trade (95% range ${fmtUsd(s.mean - s.ci, true)} to ${fmtUsd(s.mean + s.ci, true)}). That's real, not bad luck; look below for where it comes from.`]
+    : ["info", `Average ${fmtUsd(s.mean, true)} per trade, but the 95% range (${fmtUsd(s.mean - s.ci, true)} to ${fmtUsd(s.mean + s.ci, true)}) includes zero: not yet distinguishable from luck.`];
+  $("jrVerdict").className = `pl-w ${verdict[0] === "good" ? "ok" : verdict[0] === "bad" ? "bad" : "warn"}`;
+  $("jrVerdict").replaceChildren(el("span", { text: verdict[0] === "good" ? "✓" : verdict[0] === "bad" ? "✗" : "i" }), verdict[1]);
+  $("jrKpis").replaceChildren(
+    kpi("Total P&L", fmtUsd(s.total, true), `${s.n} trades`, { hero: true }),
+    kpi("Win rate", pctf(s.winRate, 0), `avg win ${fmtUsd(s.avgW)} · avg loss ${fmtUsd(-s.avgL)}`),
+    kpi("Per trade", fmtUsd(s.mean, true), `± ${fmtUsd(s.ci)} (95%)`),
+    kpi("Profit factor", Number.isFinite(s.pf) ? s.pf.toFixed(2) : "∞", "gross wins ÷ gross losses (above 1 = profitable)"),
+    kpi("Worst drawdown", fmtUsd(s.maxDD), `longest losing streak ${s.streak}`),
+    kpi("Best trade", fmtUsd(s.best, true), `worst ${fmtUsd(s.worstTrade)}`),
+  );
+  drawEquity(s.curve);
+  const group = (keyFn, order) => {
+    const m = new Map();
+    for (const x of t) { const k = keyFn(x); m.set(k, (m.get(k) || []).concat(x)); }
+    const rows = [...m].map(([k, xs]) => ({ k, n: xs.length, pnl: xs.reduce((a, b) => a + b.pnl, 0), win: xs.filter((x) => x.pnl > 0).length / xs.length }));
+    return order ? order.map((k) => rows.find((r) => r.k === k) || { k, n: 0, pnl: 0, win: 0 }) : rows;
+  };
+  const bars = (host, rows, labelFn) => columnChart($(host), rows.map((r) => ({ label: labelFn(r.k), value: r.pnl, r })), {
+    labelWidth: 30, fmtTick: (v) => (v === 0 ? "0" : fmtUsd(v)),
+    tip: (b) => [fmtUsd(b.r.pnl, true), `${labelFn(b.r.k)} · ${b.r.n} trade${b.r.n === 1 ? "" : "s"} · ${pctf(b.r.win, 0)} won`],
+  });
+  const byCoin = group((x) => x.symbol).sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl)).slice(0, 12).sort((a, b) => b.pnl - a.pnl);
+  bars("jrCoin", byCoin, (k) => base(k));
+  bars("jrHour", group((x) => tzDate(x.time).getUTCHours(), [...Array(24).keys()]), (k) => String(k).padStart(2, "0"));
+  bars("jrDay", group((x) => tzDate(x.time).getUTCDay(), [1, 2, 3, 4, 5, 6, 0]), (k) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][k]);
+  const levBucket = (l) => (l == null ? "unknown" : l <= 2 ? "1–2×" : l <= 5 ? "3–5×" : l <= 10 ? "6–10×" : "over 10×");
+  bars("jrSide", group((x) => `${x.side} · ${levBucket(x.leverage)}`), (k) => k);
+  $("jrHourSub").textContent = `close time, ${tzShort()}`;
+  renderJournalTable();
+}
+
+function drawEquity(curve) {
+  const host = $("jrEquity");
+  host.replaceChildren();
+  const W = host.clientWidth - 24, H = host.clientHeight - 16;
+  if (W <= 0 || curve.length < 1) return;
+  const pts = [[curve[0][0] - 1, 0], ...curve];
+  const pad = { l: 56, r: 8, t: 10, b: 20 }, iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+  const vals = pts.map((x) => x[1]);
+  let hi = Math.max(0, ...vals), lo = Math.min(0, ...vals);
+  if (hi === lo) hi = lo + 1;
+  const X = (i) => pad.l + (i / Math.max(1, pts.length - 1)) * iw, Y = (v) => pad.t + (hi - v) / (hi - lo) * ih;
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  for (const v of [lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i)) {
+    s.append(svg("line", { x1: pad.l, x2: W - pad.r, y1: Y(v), y2: Y(v), class: v === 0 ? "baseline" : "gridline" }));
+    const t = svg("text", { x: pad.l - 6, y: Y(v) + 3.5, "text-anchor": "end" });
+    t.textContent = v === 0 ? "0" : fmtUsd(v);
+    s.append(t);
+  }
+  const d = `M${pts.map((p, i) => `${X(i)},${Y(p[1])}`).join("L")}`;
+  s.append(svg("path", { d: `${d}L${X(pts.length - 1)},${Y(0)}L${X(0)},${Y(0)}Z`, fill: "var(--accent)", opacity: 0.1 }));
+  s.append(svg("path", { d, fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round" }));
+  const hit = svg("rect", { x: pad.l, y: pad.t, width: iw, height: ih, fill: "transparent" });
+  hit.addEventListener("pointermove", (e) => {
+    const r = host.getBoundingClientRect(), i = Math.max(1, Math.min(pts.length - 1, Math.round((e.clientX - r.left - 12 - pad.l) / iw * (pts.length - 1))));
+    showTip(e, [fmtUsd(pts[i][1], true), `after trade ${i} · ${fmtDate(pts[i][0])} ${tzShort()}`]);
+  });
+  hit.addEventListener("pointerleave", hideTip);
+  s.append(hit);
+  host.append(s);
+}
+
+const JR_COLS = [
+  { key: "time", label: () => `Closed (${tzShort()})`, cell: (x) => fmtDate(x.time) },
+  { key: "symbol", label: "Coin", cell: (x) => el("a", { href: tradeUrl(x.symbol), target: "_blank", rel: "noopener noreferrer", class: "sym" }, symNode(x.symbol)) },
+  { key: "side", label: "Side", cell: (x) => el("span", { class: `setup-b ${x.side === "long" ? "trend" : "ignition"}`, text: x.side }) },
+  { key: "leverage", label: "Lev.", cell: (x) => (x.leverage ? `${x.leverage}×` : el("span", { class: "dim", text: "—" })) },
+  { key: "entry", label: "Entry", cell: (x) => (x.entry ? fmtPrice(x.entry) : "—") },
+  { key: "exit", label: "Exit", cell: (x) => (x.exit ? fmtPrice(x.exit) : "—") },
+  { key: "move", label: "Move", cell: (x) => (x.move == null ? "—" : changeNode(x.move)) },
+  { key: "pnl", label: "P&L", cell: (x) => el("b", { class: x.pnl > 0 ? "pos" : "negt", text: fmtUsd(x.pnl, true) }) },
+  { key: "tag", label: "Setup tag", cell: (x) => {
+      const inp = el("input", { class: "jr-tag", value: x.tag || "", placeholder: "add…", "aria-label": "Setup tag" });
+      inp.addEventListener("change", async () => { await fetch(`/api/journal/${x.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag: inp.value }) }); x.tag = inp.value; renderJournal(); });
+      inp.addEventListener("click", (e) => e.stopPropagation());
+      return inp;
+    } },
+  { key: "_del", label: "", cell: (x) => {
+      const b = el("button", { class: "btn icon jr-del", title: "Delete this trade", "aria-label": "Delete trade", text: "×" });
+      b.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!confirm(`Delete ${base(x.symbol)} ${x.side} closed ${fmtDate(x.time)} (${fmtUsd(x.pnl, true)})?`)) return;
+        await fetch(`/api/journal/${x.id}`, { method: "DELETE" });
+        loadJournal();
+      });
+      return b;
+    } },
+];
+
+function renderJournalTable() {
+  const rows = sortRows(jr.trades.map((x) => ({ ...x, move: x.entry && x.exit ? (x.exit / x.entry - 1) * (x.side === "long" ? 1 : -1) : null })), jr.sort);
+  const head = el("tr", {}, ...JR_COLS.map((c) => {
+    const active = jr.sort.key === c.key;
+    const th = el("th", {}, typeof c.label === "function" ? c.label() : c.label, el("span", { class: "arrow", text: active ? (jr.sort.dir > 0 ? "↑" : "↓") : "" }));
+    if (!c.key.startsWith("_")) th.addEventListener("click", () => { jr.sort = { key: c.key, dir: active ? -jr.sort.dir : -1 }; renderJournalTable(); });
+    return th;
+  }));
+  $("jrHead").replaceChildren(head);
+  $("jrRows").replaceChildren(...rows.map((x) => el("tr", {}, ...JR_COLS.map((c) => el("td", {}, c.cell(x))))));
+  $("jrCount").textContent = `${fmtInt(rows.length)} trades`;
+}
+
+// ---------- CSV import (Bybit "Closed P&L" export, or any similar CSV)
+function parseCSV(text) {
+  text = text.replace(/^﻿/, "");
+  const first = text.split(/\r?\n/, 1)[0];
+  const delim = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ";" : ",";
+  const rows = [];
+  let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) {
+      if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === delim) { row.push(cur); cur = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(cur); rows.push(row); row = []; cur = ""; }
+    else cur += ch;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+const MAP_FIELDS = [
+  ["symbol", "Coin / contract", /contract|symbol|market|pair|instrument/i],
+  ["side", "Side / direction", /direction|side|type/i],
+  ["qty", "Quantity", /^qty|quantity|size|amount|contracts? qty/i],
+  ["entry", "Entry price", /entry|open.*price|avg.*entry/i],
+  ["exit", "Exit price", /exit|clos.*price|avg.*exit/i],
+  ["pnl", "Closed P&L (USDT)", /closed.*p.?&?.?l|realized.*p.?&?.?l|^p.?&?.?l|profit/i],
+  ["time", "Close time", /trade time|close.*time|time|date|created|updated/i],
+  ["leverage", "Leverage (optional)", /leverage/i],
+];
+
+function guessMapping(header) {
+  const used = new Set(), map = {};
+  for (const [key, , re] of MAP_FIELDS) {
+    const i = header.findIndex((h, j) => !used.has(j) && re.test(h.trim()));
+    map[key] = i;
+    if (i >= 0) used.add(i);
+  }
+  return map;
+}
+
+const toNum = (v) => { const n = parseFloat(String(v ?? "").replace(/[^\d.eE+\-]/g, "")); return Number.isFinite(n) ? n : null; };
+function toTime(v) {
+  v = String(v ?? "").trim();
+  if (/^\d{10,13}$/.test(v)) return Number(v) > 1e12 ? Number(v) / 1000 : Number(v);
+  const m = v.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/) || null;
+  if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) / 1000;  // exports are UTC
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t / 1000 : null;
+}
+function toSide(v, header) {
+  const s = String(v ?? "").toLowerCase();
+  if (s.includes("long")) return "long";
+  if (s.includes("short")) return "short";
+  const closing = /clos/i.test(header);  // "Closing direction: Sell" closes a long
+  if (s.includes("sell")) return closing ? "long" : "short";
+  if (s.includes("buy")) return closing ? "short" : "long";
+  return null;
+}
+
+function buildImport() {
+  const { header, rows, map } = jr.csv;
+  const swap = $("jrSwap").checked;
+  const trades = [], bad = [];
+  rows.forEach((r, i) => {
+    let side = map.side >= 0 ? toSide(r[map.side], header[map.side]) : null;
+    if (side && swap) side = side === "long" ? "short" : "long";
+    const t = {
+      symbol: map.symbol >= 0 ? String(r[map.symbol]).replace(/[^A-Za-z0-9]/g, "").toUpperCase() : "",
+      side, qty: toNum(r[map.qty]), entry: toNum(r[map.entry]), exit: toNum(r[map.exit]), pnl: toNum(r[map.pnl]),
+      time: map.time >= 0 ? toTime(r[map.time]) : null, leverage: map.leverage >= 0 ? toNum(r[map.leverage]) : null, source: "import",
+    };
+    if (t.symbol && !/USDT$|USDC$|USD$/.test(t.symbol)) t.symbol += "USDT";
+    if (!t.symbol || !t.side || t.pnl == null || t.time == null) bad.push(i + 2); else trades.push(t);
+  });
+  return { trades, bad };
+}
+
+function renderImport() {
+  const { header, rows, map } = jr.csv;
+  $("jrMap").replaceChildren(...MAP_FIELDS.map(([key, label]) => {
+    const sel = el("select", { "aria-label": label },
+      el("option", { value: "-1", text: "— not in file —" }), ...header.map((h, i) => el("option", { value: String(i), text: h || `column ${i + 1}` })));
+    sel.value = String(map[key]);
+    sel.addEventListener("change", () => { map[key] = Number(sel.value); renderImport(); });
+    return el("label", { class: "field jr-mapf" }, label, sel);
+  }));
+  const { trades, bad } = buildImport();
+  const sample = trades.slice(0, 5);
+  $("jrPreview").replaceChildren(el("table", {},
+    el("thead", {}, el("tr", {}, ...["Closed (UTC)", "Coin", "Side", "Qty", "Entry", "Exit", "P&L"].map((h) => el("th", { text: h })))),
+    el("tbody", {}, ...sample.map((t) => el("tr", {},
+      el("td", { text: new Date(t.time * 1000).toISOString().slice(0, 16).replace("T", " ") }), el("td", { text: t.symbol }), el("td", { text: t.side }),
+      el("td", { text: t.qty ?? "—" }), el("td", { text: t.entry ?? "—" }), el("td", { text: t.exit ?? "—" }), el("td", { text: fmtUsd(t.pnl, true) }))))));
+  $("jrImportMsg").textContent = `${trades.length} of ${rows.length} rows ready${bad.length ? ` · ${bad.length} skipped (missing coin, side, P&L or time; e.g. row ${bad[0]})` : ""}. ` +
+    "Check the Side column against your Bybit history: tick “Swap long/short” if it's the wrong way round.";
+  $("jrDoImport").disabled = !trades.length;
+}
+
+$("jrFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const rows = parseCSV(await f.text());
+  if (rows.length < 2) { alert("That file has no data rows."); return; }
+  jr.csv = { header: rows[0].map((h) => h.trim()), rows: rows.slice(1) };
+  jr.csv.map = guessMapping(jr.csv.header);
+  $("jrImport").hidden = false;
+  $("jrSwap").checked = false;
+  renderImport();
+  e.target.value = "";
+});
+$("jrSwap").addEventListener("change", renderImport);
+$("jrCancelImport").addEventListener("click", () => { $("jrImport").hidden = true; jr.csv = null; });
+$("jrDoImport").addEventListener("click", async () => {
+  const { trades } = buildImport();
+  const r = await (await fetch("/api/journal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trades }) })).json();
+  $("jrImport").hidden = true;
+  jr.csv = null;
+  $("jrMsg").textContent = r.error ? `Import failed: ${r.error}` : `Imported ${r.added} new trades${r.skipped ? ` (${r.skipped} already in the journal)` : ""}.`;
+  loadJournal();
+});
+
+// ---------- manual entry
+$("jrAddBtn").addEventListener("click", () => {
+  $("jrAdd").hidden = !$("jrAdd").hidden;
+  if (!$("jrAddTime").value) {
+    const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+    $("jrAddTime").value = d.toISOString().slice(0, 16);
+  }
+});
+$("jrAddSave").addEventListener("click", async () => {
+  const entry = num("jrAddEntry"), exit = num("jrAddExit"), qty = num("jrAddQty"), side = $("jrAddSide").value;
+  let pnl = num("jrAddPnl");
+  if (pnl == null && entry && exit && qty) pnl = (exit - entry) * qty * (side === "long" ? 1 : -1);
+  const trade = {
+    time: new Date($("jrAddTime").value).getTime() / 1000, symbol: $("jrAddSym").value, side, qty, entry, exit, pnl,
+    leverage: num("jrAddLev"), tag: $("jrAddTag").value, note: $("jrAddNote").value, source: "manual",
+  };
+  const r = await (await fetch("/api/journal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trade }) })).json();
+  $("jrMsg").textContent = r.error ? `Not saved: ${r.error}` : "Trade saved.";
+  if (!r.error) { $("jrAdd").hidden = true; ["jrAddSym", "jrAddQty", "jrAddEntry", "jrAddExit", "jrAddPnl", "jrAddLev", "jrAddTag", "jrAddNote"].forEach((id) => { $(id).value = ""; }); loadJournal(); }
+});
+$("jrClear").addEventListener("click", async () => {
+  if (!jr.trades.length || !confirm(`Delete ALL ${jr.trades.length} trades from the journal? This can't be undone.`)) return;
+  await fetch("/api/journal/all", { method: "DELETE" });
+  loadJournal();
+});
+$("jrExport").addEventListener("click", () => {
+  const cols = ["time", "symbol", "side", "qty", "entry", "exit", "pnl", "leverage", "tag", "note"];
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = [cols.join(","), ...jr.trades.map((t) => cols.map((c) => esc(c === "time" ? new Date(t.time * 1000).toISOString() : t[c])).join(","))].join("\n");
+  const a = el("a", { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "pump-scanner-journal.csv" });
+  document.body.append(a); a.click(); a.remove();
+});
 
 // ------------------------------------------------------------------ time zone switch
 function renderClock() {
@@ -2566,8 +3292,8 @@ setInterval(renderClock, 1000);
 
 // ------------------------------------------------------------------ boot
 (async () => {
-  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "bybit" }[location.hash] || "pumps";
-  state.view = startView === "bybit" ? "alerts" : startView;
+  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal" }[location.hash] || "pumps";
+  state.view = startView;
   document.body.classList.add(`view-${state.view}`);
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === startView)));
   await loadScan();

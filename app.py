@@ -5,7 +5,7 @@ Local web dashboard for the pump scanner.
 
 Candle CSVs are loaded into memory once; scans for a given threshold/window
 are computed on demand and cached. The "Update data" button runs the same
-incremental Binance download as scanner.py in a background thread. The
+incremental Bybit download as scanner.py in a background thread. The
 Signals page serves the research report and live scores from signals.py.
 The live loop fetches each newly closed 15m candle and raises setup alerts
 (setups.py rules) for the Alerts page.
@@ -27,15 +27,16 @@ from flask import Flask, abort, jsonify, redirect, request, send_from_directory,
 import auth
 import notify
 
-import bybit
+import exchange
 import futures
+import journal
 import live
 import scanner
 import setups
 import signals
 import trend
 
-# Some Binance symbols are non-ASCII (e.g. 币安人生USDT); Windows consoles default to cp1252
+# Some symbols are non-ASCII; Windows consoles default to cp1252
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
@@ -93,8 +94,7 @@ def api_me():
     return jsonify({"auth": auth.enabled()})
 
 _lock = threading.Lock()
-_frames = {}          # symbol -> candle DataFrame on a full 15m grid (Binance)
-_bframes = {}         # same for Bybit-only coins (Alerts → Bybit tab)
+_frames = {}          # symbol -> candle DataFrame on a full 15m grid (Bybit USDT perpetuals)
 _scan_cache = {}      # (threshold, window_hours) -> response dict
 _loaded_at = None
 _download = {"running": False, "done": 0, "total": 0, "current": None,
@@ -125,39 +125,15 @@ def load_frames():
         _loaded_at = time.time()
         _live_cache = None
     print(f"Loaded {len(_frames)} pairs in {time.time() - t0:.1f}s")
-    load_bybit_frames()
     backfill_alerts()
     # Score the latest candles in the background so the Signals page opens fast
     if signals.MODEL_PATH.exists():
         threading.Thread(target=get_live, daemon=True).start()
 
 
-def load_bybit_frames():
-    global _bframes
-    paths = bybit.candle_paths()
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        loaded = dict(zip((p.stem for p in paths), pool.map(signals.load_full, paths)))
+def frame_for(symbol, _exchange=None):
     with _lock:
-        _bframes = {s: df for s, df in loaded.items() if df is not None}
-    print(f"Loaded {len(_bframes)} Bybit-only pairs")
-
-
-def refresh_bybit():
-    """Refresh the Bybit-only coin list (new listings, volume filter) and fill any gaps."""
-    try:
-        with _io_lock:
-            bybit.download_all()
-        load_bybit_frames()
-        backfill_alerts(exchanges=("bybit",))
-    except Exception as e:
-        print(f"Bybit refresh failed: {e}")
-
-
-def frame_for(symbol, exchange=None):
-    with _lock:
-        if exchange == "bybit":
-            return _bframes.get(symbol)
-        return _frames.get(symbol) if symbol in _frames else _bframes.get(symbol)
+        return _frames.get(symbol)
 
 
 def ts(t):
@@ -278,7 +254,7 @@ def api_download_start():
         if _download["running"]:
             return jsonify(_download), 409
         _download.update(running=True, done=0, total=0, current=None, errors=[],
-                         started=time.time(), finished=None, message="Connecting to Binance…")
+                         started=time.time(), finished=None, message="Connecting to Bybit…")
     threading.Thread(target=_download_worker, args=(days,), daemon=True).start()
     return jsonify(_download), 202
 
@@ -390,12 +366,12 @@ def _add_alerts(items, fresh_after=None):
     return new
 
 
-def backfill_alerts(hours=48, exchanges=("binance", "bybit")):
+def backfill_alerts(hours=48):
     """Recreate the last `hours` of alerts from stored candles (so the feed isn't empty)."""
     with _lock:
-        sources = {"binance": dict(_frames), "bybit": dict(_bframes)}
+        frames = dict(_frames)
     since = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)
-    items = [a for ex in exchanges for sym, df in sources[ex].items() for a in live.alerts_for(sym, df, since, ex)]
+    items = [a for sym, df in frames.items() for a in live.alerts_for(sym, df, since)]
     _add_alerts(items)
 
 
@@ -403,7 +379,6 @@ def run_live_cycle():
     global _loaded_at, _live_cache
     t0 = time.time()
     with _io_lock:
-        live.ensure_base_url()
         with _lock:
             frames = dict(_frames)
 
@@ -420,29 +395,6 @@ def run_live_cycle():
         with ThreadPoolExecutor(max_workers=8) as pool:
             results = list(pool.map(one, frames.items()))
 
-        # Bybit-only coins: same rules, Bybit's kline endpoint
-        with _lock:
-            bframes = dict(_bframes)
-        now_ms = int(time.time() * 1000)
-        end_ms = now_ms - now_ms % (live.INTERVAL_S * 1000)
-
-        def one_bybit(item):
-            sym, df = item
-            last = df["close"].last_valid_index()
-            try:
-                rows = bybit.fetch_klines(sym, int(last.timestamp() * 1000) + live.INTERVAL_S * 1000, end_ms)
-                return sym, (live.append_rows(sym, df, rows, bybit.CANDLE_DIR) if rows else None), last
-            except Exception as e:
-                print(f"live: Bybit {sym} failed ({e})")
-                return sym, None, last
-
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            bresults = list(pool.map(one_bybit, bframes.items()))
-    bupdated = {s: df for s, df, _ in bresults if df is not None}
-    if bupdated:
-        with _lock:
-            _bframes.update(bupdated)
-
     updated = {s: df for s, df, _ in results if df is not None}
     if updated:
         with _lock:
@@ -454,13 +406,12 @@ def run_live_cycle():
     # (catching up after downtime) are filed as history so they don't notify.
     fresh_after = int(time.time()) - 45 * 60 - 900
     items = [a for s, df, last in results if df is not None for a in live.alerts_for(s, df, last)]
-    items += [a for s, df, last in bresults if df is not None for a in live.alerts_for(s, df, last, "bybit")]
     fresh = _add_alerts(items, fresh_after)
     new = len(fresh)
     _telegram_after_scan(fresh)
     if updated and signals.MODEL_PATH.exists():
         threading.Thread(target=get_live, daemon=True).start()
-    return len(updated) + len(bupdated), new, time.time() - t0
+    return len(updated), new, time.time() - t0
 
 
 def _telegram_after_scan(fresh):
@@ -487,7 +438,7 @@ def _telegram_after_scan(fresh):
         a["confirm_sent"] = True
         if c["confirmed"]:
             confirmed.append({**a, "chg_1h": c["chg_1h"],
-                              "tags": bybit.symbols().get(a["symbol"], {}).get("tags", []) if a.get("exchange") == "bybit" else []})
+                              "tags": exchange.symbols().get(a["symbol"], {}).get("tags", [])})
     batch = [a for a in confirmed if notify.wants(a, "confirmed")]
     if batch:
         notify.send(notify.format_alerts(batch, "confirmed"))
@@ -511,7 +462,7 @@ def api_telegram_update():
 
 
 def _next_boundary():
-    # 12s after the next 15m close, so Binance has the finished candle
+    # 12s after the next 15m close, so the exchange has the finished candle
     return (time.time() // live.INTERVAL_S + 1) * live.INTERVAL_S + 12
 
 
@@ -533,7 +484,6 @@ def _live_loop():
             _live_state["next_scan"] = _next_boundary()
         if _trend_due():
             threading.Thread(target=refresh_trend, daemon=True).start()
-            threading.Thread(target=refresh_bybit, daemon=True).start()
         time.sleep(2)
 
 
@@ -550,18 +500,15 @@ def _setup_stats(path=setups.REPORT_PATH):
 def api_alerts():
     with _lock:
         alerts = [dict(a) for a in _alerts.values()]
-        sources = {"binance": dict(_frames), "bybit": dict(_bframes)}
-    meta = bybit.symbols()
+        frames = dict(_frames)
+    meta = exchange.symbols()
     for a in alerts:
-        ex = a.get("exchange", "binance")
-        df = sources[ex].get(a["symbol"])
+        df = frames.get(a["symbol"])
         a.update({k: clean(v) for k, v in live.outcome(df, a).items()} if df is not None else {})
-        if ex == "bybit":
-            a["tags"] = meta.get(a["symbol"], {}).get("tags", [])
+        a["tags"] = meta.get(a["symbol"], {}).get("tags", [])
     alerts.sort(key=lambda a: (-a["time"], a["symbol"]))
-    return jsonify({"live": _live_state, "now": time.time(), "alerts": alerts,
-                    "stats": _setup_stats(), "stats_bybit": _setup_stats(setups.BYBIT_REPORT_PATH),
-                    "bybit_coins": len(_bframes)})
+    return jsonify({"live": _live_state, "now": time.time(), "alerts": alerts, "stats": _setup_stats(),
+                    "coins": len(frames)})
 
 
 # --------------------------------------------------------------------------- #
@@ -575,6 +522,7 @@ def refresh_trend():
     btc_state = lambda r: next((x["in_trend"] for x in (r or {}).get("current", {}).get("rows", []) if x["symbol"] == "BTCUSDT"), None)
     before = btc_state(json.loads(trend.REPORT_PATH.read_text())) if trend.REPORT_PATH.exists() else None
     try:
+        exchange.refresh_symbols()
         trend.download_all()
         _trend_state["message"] = "Rebuilding trend report…"
         report = trend.run()
@@ -616,6 +564,72 @@ def api_trend():
 def api_trend_refresh():
     threading.Thread(target=refresh_trend, daemon=True).start()
     return jsonify(_trend_state), 202
+
+
+_quote_cache = {}  # symbol -> (fetched_at, quote)
+
+
+@app.get("/api/quote/<symbol>")
+def api_quote(symbol):
+    """Live price and contract details for the trade planner (cached 20s)."""
+    if not symbol.isalnum() or symbol not in exchange.symbols():
+        abort(404)
+    hit = _quote_cache.get(symbol)
+    if hit and time.time() - hit[0] < 20:
+        return jsonify(hit[1])
+    try:
+        t = exchange.get("/v5/market/tickers", {"category": "linear", "symbol": symbol})["list"][0]
+        i = exchange.get("/v5/market/instruments-info", {"category": "linear", "symbol": symbol})["list"][0]
+        tiers = exchange.get("/v5/market/risk-limit", {"category": "linear", "symbol": symbol})["list"]
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+    q = {
+        "symbol": symbol, "price": float(t["lastPrice"]), "mark": float(t["markPrice"]),
+        "change_24h": float(t.get("price24hPcnt") or 0), "funding": float(t.get("fundingRate") or 0),
+        "next_funding": int(t.get("nextFundingTime") or 0) // 1000,
+        "funding_interval_h": int(i.get("fundingInterval") or 480) / 60,
+        "max_leverage": float(i["leverageFilter"]["maxLeverage"]),
+        "qty_step": float(i["lotSizeFilter"]["qtyStep"]), "min_qty": float(i["lotSizeFilter"]["minOrderQty"]),
+        "min_notional": float(i["lotSizeFilter"].get("minNotionalValue") or 0),
+        "tick": float(i["priceFilter"]["tickSize"]),
+        # maintenance margin rate by position size (for the liquidation price)
+        "tiers": sorted(({"limit": float(x["riskLimitValue"]), "mmr": float(x["maintenanceMargin"]),
+                          "max_leverage": float(x["maxLeverage"])} for x in tiers), key=lambda x: x["limit"]),
+        "tags": exchange.symbols().get(symbol, {}).get("tags", []),
+    }
+    _quote_cache[symbol] = (time.time(), q)
+    return jsonify(q)
+
+
+@app.get("/api/journal")
+def api_journal():
+    return jsonify(journal.all_trades())
+
+
+@app.post("/api/journal")
+def api_journal_add():
+    body = request.get_json(silent=True) or {}
+    trades = body.get("trades") or ([body["trade"]] if body.get("trade") else [])
+    if not trades or len(trades) > 20000:
+        return jsonify({"error": "send 1–20000 trades"}), 400
+    try:
+        added, skipped = journal.add(trades)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"added": added, "skipped": skipped, "total": len(journal.all_trades())})
+
+
+@app.patch("/api/journal/<trade_id>")
+def api_journal_update(trade_id):
+    t = journal.update(trade_id, request.get_json(silent=True) or {})
+    return (jsonify(t), 200) if t else (jsonify({"error": "not found"}), 404)
+
+
+@app.delete("/api/journal/<trade_id>")
+def api_journal_delete(trade_id):
+    if trade_id == "all":
+        return jsonify({"deleted": journal.delete(None)})
+    return jsonify({"deleted": journal.delete(trade_id)})
 
 
 _fut_cache = {}  # symbol -> (fetched_at, context)

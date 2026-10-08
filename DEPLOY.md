@@ -17,7 +17,7 @@ Time needed: about 45 minutes, most of it Oracle sign-up.
 
 1. Sign up at **cloud.oracle.com** → *Start for free*. Choose a **home region in
    Europe** (e.g. *Germany Central (Frankfurt)*). The region can't be changed later,
-   and US regions get blocked by Bybit and Binance's main API.
+   and Bybit blocks US regions.
    A card is needed for identity checks; Always Free resources are not charged.
 2. In the console: **Compute → Instances → Create instance**.
    - **Image:** Canonical **Ubuntu 24.04**.
@@ -71,11 +71,9 @@ Run these in order (each one uses the previous one's data):
 
 ```bash
 .venv/bin/python scanner.py --days 90
-.venv/bin/python bybit.py --download
 .venv/bin/python trend.py --download
 .venv/bin/python futures.py --download
 .venv/bin/python setups.py
-.venv/bin/python setups.py --bybit
 .venv/bin/python signals.py
 ```
 

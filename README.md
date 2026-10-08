@@ -1,6 +1,6 @@
 # Pump Scanner
 
-A local web dashboard that scans Binance (and Bybit-only) USDT crypto pairs on
+A local web dashboard that scans Bybit USDT perpetual futures (crypto only) on
 15-minute candles, records every 30%+ move, flags live volume/MACD/EMA setups,
 and tests every idea against history before it goes on the page.
 
@@ -15,9 +15,10 @@ edge in the data (mainly smaller drawdowns).
 |---|---|
 | **Pumps** | Every +30%-in-24h move over the last ~90 days, with charts |
 | **Signals** | Model-scored volatility watchlist and its out-of-sample backtest |
-| **Alerts** | Live 15m setups (Trend / Ignition) on Binance coins, 1-hour follow-through check, EMA/MACD charts, futures context, notifications |
-| **Bybit** | The same alerts for coins listed on Bybit but not Binance |
-| **Trend** | Daily EMA20/50 trend rule: today's status per coin and a backtest since 2018 |
+| **Alerts** | Live 15m setups (Trend / Ignition), 1-hour follow-through check, EMA/MACD charts, futures context (open interest, funding, long/short), notifications |
+| **Trend** | Daily EMA20/50 trend rule with volatility-target position sizes: today's status per coin and a backtest since 2020 |
+| **Planner** | Risk-based position sizing for Bybit futures: size, leverage, liquidation price, fees, funding, plus a risk-of-ruin simulation |
+| **Journal** | Your closed trades (Bybit "Closed P&L" CSV import or manual entry) with win rate, expectancy and P&L by coin / hour / weekday / side; stored in `data/journal.json`, not in git |
 
 ## Run it
 
@@ -29,9 +30,8 @@ python -m venv .venv
 # .venv/bin/pip install -r requirements.txt        # Linux / macOS
 
 # First time only: download market data (~5 minutes in total)
-.venv\Scripts\python scanner.py --days 90          # Binance 15m candles
-.venv\Scripts\python bybit.py --download           # Bybit-only coins
-.venv\Scripts\python trend.py --download           # daily candles since 2018
+.venv\Scripts\python scanner.py --days 90          # 15m candles (also fetches the coin list)
+.venv\Scripts\python trend.py --download           # daily candles since 2020
 
 .venv\Scripts\python app.py                        # then open http://127.0.0.1:5000
 ```
@@ -43,13 +43,13 @@ and refreshes the daily trend data after every daily close.
 
 | File | Purpose |
 |---|---|
-| `scanner.py` | Download Binance 15m candles; label 30%+ pumps (CLI summary) |
+| `exchange.py` | Bybit data source: coin list (crypto perpetuals, ≥ $250K/day) and candles |
+| `scanner.py` | Download 15m candles; label 30%+ pumps (CLI summary) |
 | `signals.py` | Pre-pump indicator research + model (`python signals.py`, `--live`) |
-| `setups.py` | Trend/Ignition rules, 1h confirmation, backtest (`--bybit` for Bybit coins) |
+| `setups.py` | Trend/Ignition rules, 1h confirmation, backtest |
 | `live.py` | Live candle updates and alert detection used by the app |
 | `trend.py` | Daily trend rule: download, backtest, current status |
-| `futures.py` | Binance perpetual futures context (open interest, funding, long/short) |
-| `bybit.py` | Bybit-only coin list and candles |
+| `futures.py` | Bybit futures context (open interest, funding, long/short) |
 | `app.py` | Flask server for the dashboard |
 | `static/index.html` | The dashboard |
 
@@ -67,8 +67,9 @@ To run it 24/7 on a free Oracle Cloud server, follow [DEPLOY.md](DEPLOY.md).
 
 ## Notes
 
-- Tokenized stocks/ETFs (Binance trading group `TRD_GRP_261`, Bybit `xstocks`),
-  stablecoins, gold and staked/wrapped tokens are excluded.
+- Data: Bybit USDT perpetual futures. Stocks, ETFs, commodities and forex
+  (Bybit `symbolType`), stablecoins and gold are excluded; coins in Bybit's
+  Innovation zone are kept and tagged. Bybit's USDT perpetuals start in 2020.
 - Only coins listed today are in the data (survivor bias); this flatters every
   long-only backtest.
 - Do not expose the app to the internet without adding a login: the API can

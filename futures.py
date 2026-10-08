@@ -1,115 +1,80 @@
 """
-Binance USDT-M perpetual futures context: open interest, funding rate and the
-global long/short account ratio. Free public endpoints, no API key.
+Futures context from Bybit USDT perpetuals: open interest, funding rate and the
+long/short account ratio. Public endpoints, no API key.
 
-Binance only serves the last ~30 days of open-interest and long/short history,
-so anything learned from it rests on a short sample.
+Bybit keeps a limited history of open interest and the long/short ratio, so
+anything learned from it rests on a short sample.
 
-    python futures.py --download   # cache 30 days of 1h history for every coin with a perpetual
+    python futures.py --download   # cache ~30 days of 1h history for every tracked coin
 """
 
 import argparse
-import json
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import pandas as pd
-import requests
 
+import exchange
 import scanner
 
-BASE = "https://fapi.binance.com"
 CACHE_DIR = scanner.DATA_DIR / "futures"
-_session = requests.Session()
-_throttle = threading.Lock()
-_last_call = [0.0]
-MIN_GAP = 0.32  # seconds between calls: ~940 per 5 min, under the 1000/5min data-endpoint limit
-_perps = None
-
-
-def get(path, params=None, retries=5):
-    for attempt in range(retries):
-        with _throttle:
-            wait = _last_call[0] + MIN_GAP - time.time()
-            if wait > 0:
-                time.sleep(wait)
-            _last_call[0] = time.time()
-        try:
-            r = _session.get(BASE + path, params=params, timeout=20)
-        except requests.RequestException:
-            time.sleep(2 ** attempt)
-            continue
-        if r.status_code in (418, 429):
-            time.sleep(int(r.headers.get("Retry-After", 30)))
-            continue
-        if r.status_code >= 500:
-            time.sleep(2 ** attempt)
-            continue
-        r.raise_for_status()
-        return r.json()
-    raise RuntimeError(f"GET {path} failed")
 
 
 def perpetuals():
-    global _perps
-    if _perps is None:
-        info = get("/fapi/v1/exchangeInfo")
-        _perps = {s["symbol"] for s in info["symbols"]
-                  if s["contractType"] == "PERPETUAL" and s["quoteAsset"] == "USDT" and s["status"] == "TRADING"}
-    return _perps
+    """Every tracked coin is a Bybit perpetual."""
+    return set(exchange.symbols())
 
 
-def _paged(path, symbol, period, days, limit=500):
-    """openInterestHist / globalLongShortAccountRatio, walking forward in pages."""
-    step = {"15m": 900, "1h": 3600}[period] * 1000
-    end = int(time.time() * 1000)
-    start = end - days * 86_400_000
-    out = []
-    while start < end:
-        batch = get(path, {"symbol": symbol, "period": period, "limit": limit,
-                           "startTime": start, "endTime": min(end, start + step * limit)})
-        if not batch:
-            start += step * limit
-            continue
-        out.extend(batch)
-        start = int(batch[-1]["timestamp"]) + step
-    return out
+def _paged(path, params, key, ts_key, start_ms, end_ms, limit):
+    """Walk a cursor-paged Bybit history endpoint over [start_ms, end_ms]."""
+    out, cursor = [], ""
+    while True:
+        res = exchange.get(path, {**params, "startTime": start_ms, "endTime": end_ms, "limit": limit,
+                                  **({"cursor": cursor} if cursor else {})})
+        rows = res.get("list", [])
+        out += rows
+        cursor = res.get("nextPageCursor") or ""
+        if not cursor or not rows:
+            break
+    return sorted({int(r[ts_key]): r for r in out}.values(), key=lambda r: int(r[ts_key]))
 
 
 def history(symbol, period="1h", days=29):
-    """Wide frame indexed by UTC time: oi_value, long_short, plus funding (as of each time)."""
-    oi = _paged("/futures/data/openInterestHist", symbol, period, days)
-    ls = _paged("/futures/data/globalLongShortAccountRatio", symbol, period, days)
-    fr = get("/fapi/v1/fundingRate", {"symbol": symbol, "limit": 1000,
-                                      "startTime": int((time.time() - days * 86400) * 1000)})
-    idx = lambda rows, key="timestamp": pd.to_datetime([int(r[key]) for r in rows], unit="ms", utc=True)
-    df = pd.DataFrame(index=idx(oi))
+    """Frame indexed by UTC time: open_interest (coins), long_short, funding (as of each time)."""
+    end = int(time.time() * 1000)
+    start = end - days * 86_400_000
+    oi_period = {"1h": "1h", "15m": "15min"}[period]
+    oi = _paged("/v5/market/open-interest", {"category": "linear", "symbol": symbol, "intervalTime": oi_period},
+                "list", "timestamp", start, end, 200)
+    ls = _paged("/v5/market/account-ratio", {"category": "linear", "symbol": symbol, "period": oi_period},
+                "list", "timestamp", start, end, 500)
+    fr = _paged("/v5/market/funding/history", {"category": "linear", "symbol": symbol},
+                "list", "fundingRateTimestamp", start, end, 200)
+    idx = lambda rows, k: pd.to_datetime([int(r[k]) for r in rows], unit="ms", utc=True)
+    df = pd.DataFrame(index=idx(oi, "timestamp"))
     if oi:
-        df["oi_value"] = [float(r["sumOpenInterestValue"]) for r in oi]
+        df["open_interest"] = [float(r["openInterest"]) for r in oi]
     if ls:
-        df = df.join(pd.Series([float(r["longShortRatio"]) for r in ls], index=idx(ls), name="long_short"), how="outer")
+        ratio = [float(r["buyRatio"]) / max(float(r["sellRatio"]), 1e-9) for r in ls]
+        df = df.join(pd.Series(ratio, index=idx(ls, "timestamp"), name="long_short"), how="outer")
     if fr:
-        f = pd.Series([float(r["fundingRate"]) for r in fr], index=idx(fr, "fundingTime"), name="funding")
+        f = pd.Series([float(r["fundingRate"]) for r in fr], index=idx(fr, "fundingRateTimestamp"), name="funding")
         f.index = f.index.floor("min")
         df = df.join(f, how="outer")
     df = df[~df.index.duplicated()].sort_index()
     if "funding" in df:
-        df["funding"] = df["funding"].ffill()  # funding settles every 8h (sometimes 4h/1h); carry it forward
+        df["funding"] = df["funding"].ffill()  # funding settles every 1–8h; carry it forward
     return df
 
 
 def download_all(workers=4, progress=None):
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    spot = {p.stem for p in scanner.candle_paths()}
-    syms = sorted(spot & perpetuals())
+    syms = sorted(perpetuals())
     done = 0
 
     def one(sym):
-        df = history(sym)
-        df.to_csv(CACHE_DIR / f"{sym}.csv")
+        history(sym).to_csv(CACHE_DIR / f"{sym}.csv")
         return sym
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -134,7 +99,7 @@ def context_at(df, t):
     past = df.loc[:t]
     if past.empty:
         return None
-    oi = past["oi_value"].dropna() if "oi_value" in past else pd.Series(dtype=float)
+    oi = past["open_interest"].dropna() if "open_interest" in past else pd.Series(dtype=float)
 
     def chg(hours):
         if len(oi) < 2:
@@ -145,7 +110,6 @@ def context_at(df, t):
     ls = past["long_short"].dropna() if "long_short" in past else pd.Series(dtype=float)
     fr = past["funding"].dropna() if "funding" in past else pd.Series(dtype=float)
     return {
-        "oi_value": float(oi.iloc[-1]) if len(oi) else None,
         "oi_chg_4h": chg(4), "oi_chg_24h": chg(24),
         "funding": float(fr.iloc[-1]) if len(fr) else None,
         "long_short": float(ls.iloc[-1]) if len(ls) else None,
@@ -154,22 +118,18 @@ def context_at(df, t):
 
 def live_context(symbol):
     """Fresh context for one coin (used by the alert detail panel)."""
-    if symbol not in perpetuals():
+    meta = exchange.symbols().get(symbol)
+    if not meta:
         return None
     df = history(symbol, period="15m", days=2)
-    ctx = context_at(df, df.index[-1])
-    prem = get("/fapi/v1/premiumIndex", {"symbol": symbol})
-    ctx["funding_next"] = float(prem.get("lastFundingRate", 0))
-    ctx["next_funding_time"] = int(prem.get("nextFundingTime", 0)) // 1000
-    # Funding settles every 8h for most coins but 4h or 1h for some; measure it
-    recent = get("/fapi/v1/fundingRate", {"symbol": symbol, "limit": 4})
-    gaps = [int(b["fundingTime"]) - int(a["fundingTime"]) for a, b in zip(recent, recent[1:])]
-    ctx["funding_interval_h"] = round(min(gaps) / 3_600_000) if gaps else 8
-    ctx["series"] = {
-        "t": [int(x.timestamp()) for x in df.index],
-        "oi": [None if pd.isna(v) else float(v) for v in df.get("oi_value", pd.Series(index=df.index))],
-        "ls": [None if pd.isna(v) else float(v) for v in df.get("long_short", pd.Series(index=df.index))],
-    }
+    ctx = context_at(df, df.index[-1]) if len(df) else {}
+    tick = exchange.get("/v5/market/tickers", {"category": "linear", "symbol": symbol})["list"][0]
+    ctx["oi_value"] = float(tick.get("openInterestValue") or 0)
+    ctx["funding_next"] = float(tick.get("fundingRate") or 0)
+    ctx["next_funding_time"] = int(tick.get("nextFundingTime") or 0) // 1000
+    ctx["funding_interval_h"] = meta.get("funding_interval_h", 8)
+    if ctx.get("funding") is None:
+        ctx["funding"] = ctx["funding_next"]
     return ctx
 
 

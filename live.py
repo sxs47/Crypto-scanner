@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
 
+import exchange
 import scanner
 import setups
 
@@ -22,32 +23,16 @@ CSV_COLS = scanner.CSV_COLUMNS
 FRAME_COLS = ["open", "high", "low", "close", "quote_volume", "trades", "taker_buy_quote"]
 
 
-def ensure_base_url():
-    if scanner._base_url is None:
-        scanner._base_url = scanner.pick_base_url()
-
-
 def fetch_since(symbol, last_open):
-    """Closed klines after `last_open` (a UTC Timestamp). Returns raw kline rows."""
+    """Closed 15m candles after `last_open` (a UTC Timestamp), in the shared row shape."""
     now_ms = int(time.time() * 1000)
     end_ms = now_ms - now_ms % (INTERVAL_S * 1000)  # start of the current, unclosed candle
     start_ms = int(last_open.timestamp() * 1000) + INTERVAL_S * 1000
-    rows = []
-    while start_ms < end_ms:
-        batch = scanner.api_get("/api/v3/klines", {
-            "symbol": symbol, "interval": "15m", "startTime": start_ms,
-            "endTime": end_ms - 1, "limit": 1000})
-        if not batch:
-            break
-        rows.extend(batch)
-        start_ms = batch[-1][0] + INTERVAL_S * 1000
-        if len(batch) < 1000:
-            break
-    return rows
+    return exchange.klines(symbol, "15m", start_ms, end_ms) if start_ms < end_ms else []
 
 
 def append_rows(symbol, frame, rows, candle_dir=None):
-    """Append raw klines (Binance row shape) to the CSV and return the extended in-memory frame."""
+    """Append candle rows (exchange.py row shape) to the CSV and return the extended in-memory frame."""
     raw = pd.DataFrame([r[:11] for r in rows], columns=CSV_COLS)
     times = pd.to_datetime(raw["open_time"], unit="ms", utc=True)
     csv = raw.copy()
@@ -65,7 +50,7 @@ def append_rows(symbol, frame, rows, candle_dir=None):
 
 
 # --------------------------------------------------------------------------- #
-def alerts_for(symbol, df, since, exchange="binance"):
+def alerts_for(symbol, df, since, exchange="bybit"):
     """Setup alerts on candles with open time > `since`, using the backtest's cooldown."""
     tail = df.iloc[-TAIL:]
     if len(tail) < WARMUP + 10:

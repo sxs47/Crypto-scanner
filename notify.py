@@ -16,6 +16,7 @@ import time
 
 import requests
 
+import exchange
 import scanner
 
 CONFIG_PATH = scanner.DATA_DIR / "telegram.json"
@@ -23,7 +24,6 @@ DEFAULTS = {
     "enabled": True,
     "events": "confirmed",              # "confirmed" = after the 1h check passes; "all" = every new alert
     "setups": ["trend"],                # "trend", "ignition"
-    "exchanges": ["binance", "bybit"],
     "trend_changes": True,              # BTC daily trend turning on/off
 }
 
@@ -64,7 +64,7 @@ def wants(alert, event):
     cfg = config()
     if not cfg or not cfg["enabled"]:
         return False
-    if alert.get("setup") not in cfg["setups"] or alert.get("exchange", "binance") not in cfg["exchanges"]:
+    if alert.get("setup") not in cfg["setups"]:
         return False
     return (cfg["events"] == "all" and event == "new") or (cfg["events"] == "confirmed" and event == "confirmed")
 
@@ -119,14 +119,12 @@ def format_alerts(alerts, event):
     lines = [head + (f" · {len(alerts)}" if len(alerts) > 1 else "")]
     for a in alerts[:10]:
         base = a["symbol"].removesuffix("USDT")
-        ex = a.get("exchange", "binance")
-        url = (f"https://www.bybit.com/en/trade/spot/{base}/USDT" if ex == "bybit"
-               else f"https://www.binance.com/en/trade/{base}_USDT?type=spot")
+        url = exchange.trade_url(a["symbol"])
         setup = "Trend" if a["setup"] == "trend" else "Ignition"
         detail = (f"{sig(a.get('chg_1h'))} after 1h" if event == "confirmed"
                   else f"vol {a.get('vol_x') or 0:.1f}× · candle {sig(a.get('chg'))}")
         tag = " · ⚠️ risk" if a.get("tags") else ""
-        lines.append(f"<b>{_h(base)}</b>/USDT{' [Bybit]' if ex == 'bybit' else ''} · {setup} · {detail}"
+        lines.append(f"<b>{_h(base)}</b>/USDT · {setup} · {detail}"
                      f" · price {a['price']:.6g}{tag} · <a href=\"{url}\">chart</a>")
     if len(alerts) > 10:
         lines.append(f"…and {len(alerts) - 10} more on the dashboard")

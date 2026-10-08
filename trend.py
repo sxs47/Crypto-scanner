@@ -1,5 +1,5 @@
 """
-Daily time-series momentum (trend following) on liquid Binance USDT coins.
+Daily time-series momentum (trend following) on liquid Bybit USDT perpetuals.
 
 Each day, among the N most-traded coins (by trailing 30-day volume, using only
 coins that existed then), hold those in an uptrend — EMA(fast) > EMA(slow) and
@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import exchange
 import scanner
 
 DAILY_DIR = scanner.DATA_DIR / "daily"
@@ -44,16 +45,7 @@ def download_symbol(symbol):
         start = int(pd.Timestamp(existing["date"].iloc[-1], tz="UTC").timestamp() * 1000) + DAY_MS
     now = int(time.time() * 1000)
     end = now - now % DAY_MS  # only closed days
-    rows = []
-    while start < end:
-        batch = scanner.api_get("/api/v3/klines", {"symbol": symbol, "interval": "1d",
-                                                   "startTime": start, "endTime": end - 1, "limit": 1000})
-        if not batch:
-            break
-        rows.extend(batch)
-        start = batch[-1][0] + DAY_MS
-        if len(batch) < 1000:
-            break
+    rows = exchange.klines(symbol, "1d", start, end) if start < end else []
     if rows:
         new = pd.DataFrame({
             "date": pd.to_datetime([r[0] for r in rows], unit="ms").strftime("%Y-%m-%d"),
@@ -67,8 +59,6 @@ def download_symbol(symbol):
 
 
 def download_all(workers=8, progress=None):
-    if scanner._base_url is None:
-        scanner._base_url = scanner.pick_base_url()
     DAILY_DIR.mkdir(parents=True, exist_ok=True)
     symbols = scanner.get_usdt_symbols()
     done = 0
@@ -82,10 +72,10 @@ def download_all(workers=8, progress=None):
 
 def load_panel():
     """Wide frames (date x symbol) of close and quote volume."""
-    skip = scanner.excluded_symbols()
+    keep = scanner.tracked_symbols()
     closes, vols = {}, {}
     for p in sorted(DAILY_DIR.glob("*.csv")):
-        if p.stem in skip or p.stem.removesuffix("USDT") in scanner.EXCLUDED_BASES:
+        if keep and p.stem not in keep:
             continue
         d = pd.read_csv(p, parse_dates=["date"]).set_index("date")
         if len(d) < 60:
@@ -138,6 +128,32 @@ def benchmarks(close, vol, top_n=30, slow=50):
     return btc, ew
 
 
+VT_TARGETS = (0.25, 0.40, 0.60)  # yearly volatility targets offered on the Trend tab
+VT_VOL_DAYS = 60                  # realized-volatility window (60 days beat 30 in testing)
+
+
+def realized_vol(c, days=VT_VOL_DAYS):
+    """Annualized volatility of daily returns over the last `days` days."""
+    return c.pct_change(fill_method=None).rolling(days, min_periods=days // 2).std() * np.sqrt(365)
+
+
+def vol_target_backtest(c, target, fast=20, slow=50, use_trend=True, cap=1.0):
+    """
+    One coin: exposure = min(cap, target / realized vol) while the trend rule is on
+    (or always, if use_trend=False). Decided at the close, held from the next day.
+    """
+    c = c.dropna()
+    r = c.pct_change(fill_method=None).fillna(0)
+    ef = c.ewm(span=fast, adjust=False, min_periods=slow).mean()
+    es = c.ewm(span=slow, adjust=False, min_periods=slow).mean()
+    on = ((ef > es) & (c > es)).astype(float) if use_trend else pd.Series(1.0, index=c.index)
+    w = on if target is None else (target / realized_vol(c)).clip(upper=cap).fillna(0) * on
+    held = w.shift(1).fillna(0)
+    net = held * r - held.diff().abs().fillna(held.abs()) * FEE
+    start = slow + VT_VOL_DAYS
+    return net.iloc[start:], held.iloc[start:].to_frame()
+
+
 def stats(r, held=None):
     r = r.dropna()
     if r.empty:
@@ -172,7 +188,8 @@ def periods(index):
 def run(params=None):
     p = {**DEFAULT, **(params or {})}
     close, vol = load_panel()
-    start = close.index[close.notna().sum(axis=1) >= 10][0]  # need a real universe
+    full_close = close  # single-coin studies (BTC/ETH volatility targeting) use their full history
+    start = close.index[close.notna().sum(axis=1) >= 10][0]  # the basket needs a real universe
     close, vol = close.loc[start:], vol.loc[start:]
 
     net, held = backtest(close, vol, **p)
@@ -209,6 +226,7 @@ def run(params=None):
             "ret_30d": float(c.loc[d] / c.shift(30).loc[d] - 1),
             "vs_ema_slow": float(c.loc[d] / ema_s[sym].loc[d] - 1),
             "vol_30d": float(vol[sym].iloc[-30:].mean()), "volatility": float(sigma[sym].loc[d] * np.sqrt(365)),
+            "vol_60d": float(realized_vol(c.dropna()).iloc[-1]),  # used for the volatility-target size
         })
     cur.sort(key=lambda x: (-x["in_trend"], -x["weight"], -x["ret_30d"]))
 
@@ -231,6 +249,22 @@ def run(params=None):
     for row, (lab, m) in zip(per, periods(net.index)):
         row["btc_trend"] = stats(btc_t[m])
 
+    # Volatility targeting on BTC (and ETH for comparison): hold, trend, trend + each target
+    vt = {}
+    vt_equity = None
+    for sym in ("BTCUSDT", "ETHUSDT"):
+        if sym not in full_close:
+            continue
+        c = full_close[sym]
+        rows = [{"label": "Hold", **stats(vol_target_backtest(c, None, use_trend=False)[0])},
+                {"label": "Trend rule", **stats(*vol_target_backtest(c, None, p["fast"], p["slow"]))}]
+        for t in VT_TARGETS:
+            r_vt, h_vt = vol_target_backtest(c, t, p["fast"], p["slow"])
+            rows.append({"label": f"Trend + vol target {t:.0%}", "target": t, **stats(r_vt, h_vt)})
+            if sym == "BTCUSDT" and t == 0.40:
+                vt_equity = r_vt
+        vt[sym] = {"start": str(c.dropna().index[0].date()), "rows": rows}
+
     eq = lambda r: [[int(t.timestamp()), float(v)] for t, v in (1 + r).cumprod().items()]
     report = {
         "created": int(time.time()), "params": p, "start": str(net.index[0].date()), "end": str(net.index[-1].date()),
@@ -239,7 +273,9 @@ def run(params=None):
         "btc_trend": stats(btc_t, btc_h.loc[first:]),
         "grid": grid,
         "periods": per,
-        "equity": {"strategy": eq(net), "btc": eq(btc), "equal_weight": eq(ew), "btc_trend": eq(btc_t)},
+        "equity": {"strategy": eq(net), "btc": eq(btc), "equal_weight": eq(ew), "btc_trend": eq(btc_t),
+                   "btc_trend_vt40": eq(vt_equity.loc[first:]) if vt_equity is not None else []},
+        "vol_target": {"targets": list(VT_TARGETS), "vol_days": VT_VOL_DAYS, "coins": vt},
         "exposure": [[int(t.timestamp()), float(v)] for t, v in held_.sum(axis=1).items()],
         "current": {"date": str(d.date()), "rows": cur,
                     "invested": float(w.loc[d].sum()), "in_trend": int(sum(x["in_trend"] for x in cur)),

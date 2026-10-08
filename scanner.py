@@ -1,8 +1,8 @@
 """
-Binance USDT pump scanner.
+Bybit USDT-perpetual pump scanner.
 
-1. Downloads 15-minute candles for every trading USDT spot pair on Binance
-   for the last N days (default 90) via the public REST API (no API key).
+1. Downloads 15-minute candles for every crypto USDT perpetual on Bybit
+   (see exchange.py for the coin list) for the last N days (default 90).
 2. Labels every candle from which price rose 30%+ within the next 24 hours.
 3. Groups those labeled candles into distinct pump events and prints a summary.
 
@@ -15,33 +15,21 @@ Usage:
 import argparse
 import json
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+
 from pathlib import Path
 
 import pandas as pd
-import requests
 
-# api.binance.com is geo-blocked in some regions; data-api.binance.vision is
-# Binance's public market-data-only mirror and serves the same endpoints.
-BASE_URLS = ["https://api.binance.com", "https://data-api.binance.vision"]
-INTERVAL = "15m"
 INTERVAL_MS = 15 * 60 * 1000
-KLINE_LIMIT = 1000
-WEIGHT_SOFT_LIMIT = 4800  # Binance allows 6000/min per IP; stay under it
 
-# Stablecoins / fiat-pegged bases never pump 30% and just add noise
+# Stablecoins / fiat-pegged / gold never pump 30% and just add noise
 EXCLUDED_BASES = {
     "USDC", "FDUSD", "TUSD", "USDP", "DAI", "BUSD", "EUR", "EURI", "AEUR",
     "GBP", "PAX", "USDE", "USD1", "XUSD", "BFUSD", "PYUSD", "RLUSD", "UST",
-    "PAXG", "XAUT",  # gold-backed tokens
+    "PAXG", "XAUT",
 }
-# Binance lists tokenized US stocks/ETFs (AAPLB, NVDAB, SPYB…) as USDT spot pairs.
-# They spike at the US market open, not on crypto news, so they're excluded.
-# Binance has no explicit flag; they're the pairs in this trading group.
-STOCK_TOKEN_GROUP = "TRD_GRP_261"
 
 CSV_COLUMNS = [
     "open_time", "open", "high", "low", "close", "volume", "close_time",
@@ -50,87 +38,26 @@ CSV_COLUMNS = [
 
 DATA_DIR = Path(__file__).parent / "data"
 CANDLE_DIR = DATA_DIR / "candles"
-EXCLUDED_PATH = DATA_DIR / "excluded_symbols.json"
 
 
-def excluded_symbols():
-    """Stock tokens recorded at the last symbol refresh, plus excluded bases."""
-    try:
-        return set(json.loads(EXCLUDED_PATH.read_text()))
-    except (OSError, ValueError):
-        return set()
+def tracked_symbols():
+    """Coins in the current list (exchange.py); empty if it hasn't been fetched yet."""
+    import exchange  # local import: exchange imports this module
+    return set(exchange.symbols())
 
 
 def candle_paths():
-    """CSV files for crypto pairs only (skips stock tokens and excluded bases)."""
-    skip = excluded_symbols()
-    return [p for p in sorted(CANDLE_DIR.glob("*.csv"))
-            if p.stem not in skip and p.stem.removesuffix("USDT") not in EXCLUDED_BASES]
-
-_session = requests.Session()
-_weight_lock = threading.Lock()
-_base_url = None
-
-
-# --------------------------------------------------------------------------- #
-# HTTP
-# --------------------------------------------------------------------------- #
-def pick_base_url():
-    for url in BASE_URLS:
-        try:
-            r = _session.get(f"{url}/api/v3/ping", timeout=10)
-            if r.status_code == 200:
-                return url
-        except requests.RequestException:
-            pass
-    sys.exit("Could not reach any Binance endpoint: " + ", ".join(BASE_URLS))
-
-
-def api_get(path, params=None, retries=6):
-    for attempt in range(retries):
-        try:
-            r = _session.get(f"{_base_url}{path}", params=params, timeout=30)
-        except requests.RequestException as e:
-            wait = 2 ** attempt
-            print(f"  network error ({e.__class__.__name__}), retrying in {wait}s")
-            time.sleep(wait)
-            continue
-
-        if r.status_code in (418, 429):
-            wait = int(r.headers.get("Retry-After", 60))
-            print(f"  rate limited ({r.status_code}), sleeping {wait}s")
-            time.sleep(wait)
-            continue
-        if r.status_code >= 500:
-            time.sleep(2 ** attempt)
-            continue
-        r.raise_for_status()
-
-        # Back off before Binance does it for us
-        used = int(r.headers.get("X-MBX-USED-WEIGHT-1M", 0))
-        if used > WEIGHT_SOFT_LIMIT:
-            with _weight_lock:
-                secs = 61 - datetime.now().second
-                print(f"  weight {used}/6000 used, pausing {secs}s")
-                time.sleep(secs)
-        return r.json()
-    raise RuntimeError(f"GET {path} failed after {retries} attempts")
-
+    """Candle CSVs for coins in the current list (falls back to every CSV if there's no list yet)."""
+    keep = tracked_symbols()
+    return [p for p in sorted(CANDLE_DIR.glob("*.csv")) if not keep or p.stem in keep]
 
 # --------------------------------------------------------------------------- #
 # Download
 # --------------------------------------------------------------------------- #
 def get_usdt_symbols():
-    info = api_get("/api/v3/exchangeInfo", {"permissions": "SPOT"})
-    usdt = [s for s in info["symbols"]
-            if s["quoteAsset"] == "USDT" and s["status"] == "TRADING"
-            and s.get("isSpotTradingAllowed", True) and s["baseAsset"] not in EXCLUDED_BASES]
-    groups = lambda s: {g for ps in s.get("permissionSets", []) for g in ps}
-    stocks = {s["symbol"] for s in usdt if STOCK_TOKEN_GROUP in groups(s)}
-    # Remember them so loaders skip any CSVs already downloaded for these pairs
-    DATA_DIR.mkdir(exist_ok=True)
-    EXCLUDED_PATH.write_text(json.dumps(sorted(excluded_symbols() | stocks), indent=0))
-    return sorted(s["symbol"] for s in usdt if s["symbol"] not in stocks)
+    """Refresh the coin list from Bybit and return its symbols."""
+    import exchange
+    return sorted(exchange.refresh_symbols())
 
 
 def download_symbol(symbol, start_ms, end_ms):
@@ -149,19 +76,8 @@ def download_symbol(symbol, start_ms, end_ms):
             else:
                 existing = None  # file covers a shorter history; refetch fully
 
-    rows = []
-    cursor = fetch_from
-    while cursor < end_ms:
-        batch = api_get("/api/v3/klines", {
-            "symbol": symbol, "interval": INTERVAL,
-            "startTime": cursor, "endTime": end_ms - 1, "limit": KLINE_LIMIT,
-        })
-        if not batch:
-            break
-        rows.extend(batch)
-        cursor = batch[-1][0] + INTERVAL_MS
-        if len(batch) < KLINE_LIMIT:
-            break
+    import exchange
+    rows = exchange.klines(symbol, "15m", fetch_from, end_ms) if fetch_from < end_ms else []
 
     new = pd.DataFrame([r[:11] for r in rows], columns=CSV_COLUMNS)
     if len(new):
@@ -183,13 +99,9 @@ def download_symbol(symbol, start_ms, end_ms):
 
 def download_all(days, workers, progress=None):
     """progress(done, total, symbol, error) is called after each pair, if given."""
-    global _base_url
-    _base_url = pick_base_url()
-    print(f"Using {_base_url}")
-
     CANDLE_DIR.mkdir(parents=True, exist_ok=True)
     symbols = get_usdt_symbols()
-    print(f"Found {len(symbols)} trading USDT pairs")
+    print(f"Found {len(symbols)} Bybit USDT perpetuals (crypto, ≥ $250K/day)")
 
     # Align to candle boundaries; end at the start of the current (unclosed) candle
     now_ms = int(time.time() * 1000)

@@ -41,9 +41,6 @@ FEATURES = {
     "vol_ratio_1h": "Volume last 1h vs 7d hourly average",
     "vol_ratio_4h": "Volume last 4h vs 7d average",
     "vol_ratio_24h": "Volume last 24h vs 7d daily average",
-    "trades_ratio_4h": "Trade count last 4h vs 7d average",
-    "taker_buy_4h": "Share of volume from market buys, last 4h",
-    "taker_buy_24h": "Share of volume from market buys, last 24h",
     "volatility_24h": "Volatility of 15m returns, last 24h",
     "vol_compression": "24h volatility / 7d volatility",
     "range_pos_7d": "Position inside 7d high-low range (0=low, 1=high)",
@@ -100,12 +97,7 @@ def compute_features(df, btc_close=None, threshold=0.30):
     f["vol_ratio_4h"] = qv.rolling(H4).sum() / (avg15 * H4)
     f["vol_ratio_24h"] = qv.rolling(H24).sum() / (avg15 * H24)
 
-    tr = df["trades"].fillna(0)
-    f["trades_ratio_4h"] = tr.rolling(H4).sum() / (tr.rolling(D7, min_periods=D7 // 2).mean() * H4)
 
-    tb = df["taker_buy_quote"].fillna(0)
-    f["taker_buy_4h"] = tb.rolling(H4).sum() / qv.rolling(H4).sum()
-    f["taker_buy_24h"] = tb.rolling(H24).sum() / qv.rolling(H24).sum()
 
     lr = np.log(c).diff()
     v24 = lr.rolling(H24, min_periods=H24 // 2).std()
@@ -196,7 +188,7 @@ def summarize_signals(sig):
     }
 
 
-FEE = 0.001  # Binance spot taker fee per side
+FEE = 0.001  # taker fee per side (kept from the original study for comparability)
 
 
 def simulate(sig, tp_list=(0.10, 0.20, 0.30), sl_list=(-0.05, -0.10, None)):
