@@ -17,6 +17,7 @@ import time
 import requests
 
 import exchange
+import prepump
 import scanner
 
 CONFIG_PATH = scanner.DATA_DIR / "telegram.json"
@@ -25,6 +26,7 @@ DEFAULTS = {
     "events": "confirmed",              # "confirmed" = after the 1h check passes; "all" = every new alert
     "setups": ["trend"],                # "trend", "ignition"
     "trend_changes": True,              # BTC daily trend turning on/off
+    "prepump": "squeeze",               # pre-pump watch: "off", "squeeze" (low long/short ratio only), "all"
 }
 
 _q = queue.Queue()
@@ -67,6 +69,30 @@ def wants(alert, event):
     if alert.get("setup") not in cfg["setups"]:
         return False
     return (cfg["events"] == "all" and event == "new") or (cfg["events"] == "confirmed" and event == "confirmed")
+
+
+def wants_prepump(flag):
+    cfg = config()
+    if not cfg or not cfg["enabled"] or cfg["prepump"] == "off":
+        return False
+    return cfg["prepump"] == "all" or (flag.get("ls") is not None and flag["ls"] <= prepump.SQUEEZE_LS)
+
+
+def format_prepump(flags):
+    lines = [f"👀 <b>Pre-pump watch</b>" + (f" · {len(flags)}" if len(flags) > 1 else "")]
+    for f in flags[:10]:
+        base = f["symbol"].removesuffix("USDT")
+        squeeze = f.get("ls") is not None and f["ls"] <= prepump.SQUEEZE_LS
+        ls = "L/S —" if f.get("ls") is None else f"L/S {f['ls']:.2f}" + (" 🔥 squeeze setup" if squeeze else "")
+        tag = " · ⚠️ risk" if f.get("tags") else ""
+        lines.append(f"<b>{_h(base)}</b>/USDT · vol {f['vol_x']:.0f}× · candles {f['rng_x']:.1f}× · "
+                     f"4h {f['ret4'] * 100:+.1f}% · {ls} · price {f['price']:.6g}{tag} · "
+                     f"<a href=\"{exchange.trade_url(f['symbol'])}\">chart</a>")
+    if len(flags) > 10:
+        lines.append(f"…and {len(flags) - 10} more on the dashboard")
+    lines.append("<i>A watchlist, not a buy signal: last month ~5% of flags (8% of squeeze setups) "
+                 "touched +30% within 24h; most did not. Not advice.</i>")
+    return "\n".join(lines)
 
 
 def _api(cfg, method, **params):

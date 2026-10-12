@@ -344,10 +344,19 @@ tbody tr.sel { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--a
 .risk-b { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 17px;
   color: var(--bad-text); border: 1px solid color-mix(in srgb, var(--bad-text) 45%, transparent); }
 .setup-b.ignition { background: color-mix(in srgb, var(--peak) 16%, transparent); }
+.squeeze-b { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 17px;
+  color: var(--good-text); border: 1px solid color-mix(in srgb, var(--good-text) 45%, transparent); font-weight: 600; }
+.pp-card { margin-bottom: 16px; }
+.pp-card .card-h { flex-wrap: wrap; gap: 8px 12px; }
+.pp-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-left: auto; }
+.pp-note { margin: 0 16px 10px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.pp-note b { color: var(--text); }
+.pp-scroll { max-height: 380px; min-height: 0; }
 .new-b { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 17px; background: var(--accent); color: #fff; font-weight: 600; }
 tr.fresh { animation: flash 2.4s ease-out 1; }
 @keyframes flash { from { background: var(--accent-wash); } to { background: transparent; } }
 .check { color: var(--good-text); font-weight: 600; }
+.collect-line { margin: 8px 2px 0; font-size: 12.5px; }
 .tg-panel { margin-top: 10px; padding: 12px 16px; display: grid; gap: 10px; }
 .tg-row { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; }
 .tg-panel code { font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
@@ -647,6 +656,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
     <label class="toggle field"><input type="checkbox" id="soundChk"> Sound</label>
     <button class="btn" id="tgBtn" aria-expanded="false" aria-controls="tgPanel">Telegram</button>
   </div>
+  <p class="meta collect-line" id="collectLine"></p>
   <div class="card tg-panel" id="tgPanel" hidden>
     <div class="tg-row"><b>Telegram alerts</b><span class="meta" id="tgStatus"></span></div>
     <div class="tg-row" id="tgControls">
@@ -657,9 +667,30 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       <label class="toggle field"><input type="checkbox" id="tgTrend" data-setup="trend"> Trend</label>
       <label class="toggle field"><input type="checkbox" id="tgIgn" data-setup="ignition"> Ignition</label>
       <label class="toggle field"><input type="checkbox" id="tgBtc"> BTC daily trend changes</label>
+      <div class="field">Pre-pump watch
+        <div class="seg" id="tgPrepump"><button data-v="off">Off</button><button data-v="squeeze">Squeeze setups</button><button data-v="all">All flags</button></div>
+      </div>
       <button class="btn" id="tgTest">Send test</button>
     </div>
   </div>
+
+  <section class="card pp-card" id="ppCard">
+    <div class="card-h"><h2>Pre-pump watch</h2><span class="sub" id="ppSub">volume and candle size jumped, price hasn't moved yet</span>
+      <div class="pp-tools">
+        <div class="field">Period
+          <div class="seg" id="ppPeriod"><button data-v="24">24h</button><button data-v="72">3 days</button><button data-v="168">7 days</button></div>
+        </div>
+        <label class="toggle field" title="Long/short accounts ratio ≤ 1.3: more accounts are short, so a rise can force them to buy back"><input type="checkbox" id="ppSqueeze"> Squeeze setups only</label>
+      </div>
+    </div>
+    <p class="pp-note" id="ppNote"></p>
+    <div class="table-scroll pp-scroll">
+      <table>
+        <thead id="ppHead"></thead>
+        <tbody id="ppBody"></tbody>
+      </table>
+    </div>
+  </section>
 
   <div class="filters" role="toolbar" aria-label="Alert filters">
     <div class="field">Setup
@@ -1372,9 +1403,26 @@ async function drawSymbol(symbol, interval = "15m") {
     volSeries.setData(data.t.map((t, i) => ({ time: t, value: data.v[i], color: vc })));
     setIndicators(data);
     currentSymbol = key;
+    if (interval === "15m") updateLiveBar();
   }
   return data;
 }
+
+async function updateLiveBar() {
+  if (!currentSymbol || !currentSymbol.endsWith("|15m") || document.hidden || !chart) return;
+  const sym = currentSymbol.split("|")[0];
+  let d;
+  try { d = await (await fetch(`/api/live_bars/${sym}`)).json(); } catch { return; }
+  if (currentSymbol !== `${sym}|15m` || !d.bars) return;
+  const vc = css("--axis");
+  for (const b of d.bars) {
+    try {
+      candleSeries.update({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close });
+      volSeries.update({ time: b.time, value: b.volume, color: vc });
+    } catch { /* older than the last bar drawn: a scan just replaced the data */ }
+  }
+}
+setInterval(updateLiveBar, 20000);
 
 function setMarkers(symbol, focus) {
   const evs = state.scan.events.filter((e) => e.symbol === symbol);
@@ -1977,7 +2025,7 @@ function setView(v) {
     al.unseen = 0;
     updateBadge();
     renderAlerts();
-    if (al.sel) showAlert(al.sel, false); else if (al.rows.length) showAlert(al.rows[0]);
+    if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); else if (al.rows.length) showAlert(al.rows[0]);
   } else {
     renderCharts(state.rows, Math.round(state.threshold * 100));
     if (state.selected) selectEvent(state.selected, false);
@@ -1991,7 +2039,7 @@ function refreshDetail() {
   if (state.view === "journal") { if (jr.trades.length) renderJournal(); return; }
   if (state.view === "planner") { computePlan(); return; }
   if (state.view === "trend") { if (tr.report) renderTrend(); if (tr.sel) showTrendCoin(tr.sel, false); }
-  else if (state.view === "alerts") { if (al.sel) showAlert(al.sel, false); }
+  else if (state.view === "alerts") { if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); }
   else if (state.view === "signals") { if (sig.sel) showSignalCoin(sig.sel, false); }
   else if (state.selected) selectEvent(state.selected, false);
   else if (state.coin) showCoin(state.coin);
@@ -2025,6 +2073,7 @@ async function loadAlerts() {
   }
   // Re-point the selection at the refreshed alert object (its results have moved on)
   if (al.sel) al.sel = d.alerts.find((a) => a.id === al.sel.id) || al.sel;
+  if (al.sel && state.view === "alerts" && !al.first) showAlert(al.sel, false, true);
   // Notifications for alerts first seen live
   const fresh = d.alerts.filter((a) => a.source === "live" && !al.seen.has(a.id));
   d.alerts.forEach((a) => al.seen.add(a.id));
@@ -2038,7 +2087,7 @@ async function loadAlerts() {
   renderLive();
   if (state.view === "alerts") {
     renderAlerts();
-    if (!al.sel && al.rows.length) showAlert(al.rows[0]);
+    if (!al.sel && !pp.sel && al.rows.length) showAlert(al.rows[0]);
   }
 }
 
@@ -2197,7 +2246,7 @@ function renderAlerts() {
       st ? `${al.setup === "all" ? "trend / ignition · " : ""}${al.status === "confirmed" ? "confirmed only · " : ""}random ${pctf(st.random.share_down_24h, 0)}` : ""),
   );
 
-  $("alSub").textContent = `${fmtInt(n)} alert${n === 1 ? "" : "s"} · results update every scan`;
+  $("alSub").textContent = `${fmtInt(n)} alert${n === 1 ? "" : "s"} · new alerts every 15 min · results follow the live price (30s)`;
   const trh = el("tr");
   for (const c of AL_COLS) {
     const active = al.sort.key === c.key;
@@ -2243,8 +2292,9 @@ function zoomToAlert(a) {
   return applyView(() => chart.timeScale().setVisibleRange({ from: a.time - 12 * 3600, to: Math.min(a.time + 30 * 3600, last) }));
 }
 
-async function showAlert(a, scroll = true) {
+async function showAlert(a, scroll = true, quiet = false) {
   al.sel = a;
+  if (pp.sel) { pp.sel = null; renderPrepump(); }
   showDetail();
   $("dTitle").replaceChildren(base(a.symbol), el("span", { class: "q", text: "/USDT" }));
   $("dPill").textContent = `${SETUP_LABEL[a.setup]} · ${fmtDate(a.time + 900)} ${tzShort()}`;
@@ -2269,6 +2319,7 @@ async function showAlert(a, scroll = true) {
     el("div", { class: "stat" }, el("div", { class: "label", text: l }),
       el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
   const row = markAlertSelected();
+  if (quiet) return;
   if (row && scroll) row.scrollIntoView({ block: "nearest" });
   loadFutures(a.symbol);
   await drawSymbol(a.symbol);
@@ -2695,6 +2746,7 @@ function renderTg() {
   $("tgEvents").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === tg.events)));
   for (const id of ["tgTrend", "tgIgn"]) $(id).checked = tg.setups.includes($(id).dataset.setup);
   $("tgBtc").checked = tg.trend_changes;
+  $("tgPrepump").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === (tg.prepump || "squeeze"))));
 }
 async function loadTg() {
   try { tg = await (await fetch("/api/telegram")).json(); } catch { tg = null; }
@@ -2716,6 +2768,7 @@ $("tgEvents").addEventListener("click", (e) => { const b = e.target.closest("but
 for (const id of ["tgTrend", "tgIgn"]) $(id).addEventListener("change", () =>
   saveTg({ setups: ["tgTrend", "tgIgn"].filter((x) => $(x).checked).map((x) => $(x).dataset.setup) }));
 $("tgBtc").addEventListener("change", (e) => saveTg({ trend_changes: e.target.checked }));
+$("tgPrepump").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ prepump: b.dataset.v }); });
 $("tgTest").addEventListener("click", async () => {
   $("tgTest").disabled = true;
   await saveTg({ test: true });
@@ -3259,6 +3312,164 @@ $("jrExport").addEventListener("click", () => {
   const a = el("a", { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: "pump-scanner-journal.csv" });
   document.body.append(a); a.click(); a.remove();
 });
+
+// ------------------------------------------------------------------ pre-pump watch
+const pp = { data: null, rows: [], sel: null, period: 72, squeezeOnly: false, sort: { key: "time", dir: -1 } };
+const isSqueeze = (f) => f.ls != null && pp.data && f.ls <= pp.data.rule.squeeze_ls;
+const resultNode = (f) => {
+  if (f.peak != null && f.peak >= 0.30) return el("span", { class: "check", text: "+30% ✓" });
+  if (f.peak != null && f.peak >= 0.15) return el("span", { class: "pos", text: "+15% ✓" });
+  return el("span", { class: "dim", text: f.done ? "✗" : "…", title: f.done ? "24h passed without +15%" : "still inside its 24h window" });
+};
+const PP_COLS = [
+  { key: "time", label: () => `Flagged (${tzShort()})`, cell: (f) => {
+      const t = f.time + 900, sameDay = tzDay(t) === tzDay(Date.now() / 1000);
+      const n = el("span", {}, sameDay ? fmtClock(t).slice(0, 5) : fmtDate(t));
+      if (f.source === "live" && Date.now() / 1000 - t < 1800) n.append(el("span", { class: "new-b", text: "NEW" }));
+      return n;
+    } },
+  { key: "symbol", label: "Coin", cell: (f) => {
+      const n = symNode(f.symbol);
+      if (isSqueeze(f)) n.append(el("span", { class: "squeeze-b", text: "squeeze setup", title: "More accounts short than long (ratio ≤ 1.3)" }));
+      if (f.tags && f.tags.length) n.append(el("span", { class: "risk-b", text: "new/risky", title: "Bybit lists this coin in its Innovation zone (new or higher-risk listings)" }));
+      return n;
+    } },
+  { key: "vol_x", label: "Volume", cell: (f) => `${f.vol_x.toFixed(f.vol_x < 10 ? 1 : 0)}×` },
+  { key: "rng_x", label: "Candles", cell: (f) => `${f.rng_x.toFixed(1)}×` },
+  { key: "ret4", label: "Last 4h", cell: (f) => changeNode(f.ret4) },
+  { key: "ls", label: "Long/short", cell: (f) => (f.ls == null ? el("span", { class: "dim", text: "—", title: "no ratio recorded for this time" }) : f.ls.toFixed(2)) },
+  { key: "turnover24", label: "24h vol", cell: (f) => fmtCompact(f.turnover24) },
+  { key: "now", label: "Since flag", cell: (f) => el("b", {}, changeNode(f.now)) },
+  { key: "peak", label: "Best", cell: (f) => changeNode(f.peak) },
+  { key: "trough", label: "Worst", cell: (f) => changeNode(f.trough) },
+  { key: "result", label: "Result", sortVal: (f) => f.peak, cell: resultNode },
+];
+
+async function loadPrepump() {
+  let d;
+  try { d = await (await fetch(`/api/prepump?hours=${pp.period}`)).json(); } catch { return; }
+  pp.data = d;
+  if (pp.sel) pp.sel = (d.flags || []).find((f) => f.id === pp.sel.id) || pp.sel;
+  renderPrepump();
+  if (pp.sel && state.view === "alerts") showPrepump(pp.sel, false, true);
+  if (!d.ready) setTimeout(loadPrepump, 5000);
+}
+
+function renderPrepump() {
+  const d = pp.data;
+  if (!d) return;
+  if (!d.ready) {
+    $("ppNote").textContent = "Building the watch list from stored candles… (about 20 seconds after the app starts)";
+    $("ppBody").replaceChildren();
+    return;
+  }
+  const r = d.record, b = d.base, all = r.all, sq = r.squeeze, ot = r.other;
+  const x = (v, base) => (v != null && base ? ` (${(v / base).toFixed(1)}× chance)` : "");
+  $("ppNote").replaceChildren(
+    el("b", { text: `Last ${r.days} days: ${fmtInt(all.n || 0)} finished flags (~${Math.round(r.per_day)}/day). ` }),
+    all.n ? `${pctf(all.hit30, 1)} touched +30% within 24h${x(all.hit30, b && b.hit30)}, ${pctf(all.hit15, 0)} touched +15% · ` +
+      `any coin at any time: ${pctf(b && b.hit30, 1)} / ${pctf(b && b.hit15, 0)}. ` : "",
+    sq.n ? el("b", { text: `Squeeze setups: ${pctf(sq.hit30, 1)} hit +30%, ${pctf(sq.hit15, 0)} hit +15% (${sq.n} flags)` }) : "",
+    ot.n ? ` vs. ${pctf(ot.hit30, 1)} / ${pctf(ot.hit15, 0)} for the rest. ` : " ",
+    all.n ? `Median 24h return after fees ${signed(all.median_24h)}: most flags go nowhere, so use it as a shortlist and wait for your own entry and stop. Not advice.` : "",
+  );
+  const col = PP_COLS.find((c) => c.key === pp.sort.key);
+  const val = col && col.sortVal ? col.sortVal : (f) => f[pp.sort.key];
+  const rows = (d.flags || []).filter((f) => !pp.squeezeOnly || isSqueeze(f)).sort((p, q) => {
+    const a = val(p), z = val(q);
+    if (a == null) return 1;
+    if (z == null) return -1;
+    return (a < z ? -1 : a > z ? 1 : 0) * pp.sort.dir;
+  });
+  pp.rows = rows;
+  const nSq = (d.flags || []).filter(isSqueeze).length;
+  $("ppSub").textContent = `${rows.length} flag${rows.length === 1 ? "" : "s"} · ${nSq} squeeze setup${nSq === 1 ? "" : "s"} · new flags every 15 min · prices live (30s)`;
+  const trh = el("tr");
+  for (const c of PP_COLS) {
+    const active = pp.sort.key === c.key;
+    const th = el("th", { "aria-sort": active ? (pp.sort.dir > 0 ? "ascending" : "descending") : "none" },
+      typeof c.label === "function" ? c.label() : c.label, el("span", { class: "arrow", text: active ? (pp.sort.dir > 0 ? "↑" : "↓") : "" }));
+    th.addEventListener("click", () => { pp.sort = { key: c.key, dir: active ? -pp.sort.dir : (c.key === "symbol" ? 1 : -1) }; renderPrepump(); });
+    trh.append(th);
+  }
+  $("ppHead").replaceChildren(trh);
+  if (!rows.length) {
+    $("ppBody").replaceChildren(el("tr", {}, el("td", { colspan: PP_COLS.length, class: "empty",
+      text: pp.squeezeOnly ? "No squeeze setups in this period." : "No coins flagged in this period." })));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const f of rows) {
+    const row = el("tr");
+    if (pp.sel && pp.sel.id === f.id) row.classList.add("sel");
+    for (const c of PP_COLS) row.append(el("td", {}, c.cell(f)));
+    row.addEventListener("click", () => showPrepump(f));
+    frag.append(row);
+  }
+  $("ppBody").replaceChildren(frag);
+}
+
+async function showPrepump(f, scroll = true, quiet = false) {
+  pp.sel = f;
+  al.sel = null;
+  markAlertSelected();
+  if (!quiet) renderPrepump();
+  showDetail();
+  $("dTitle").replaceChildren(base(f.symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = `Pre-pump watch · ${fmtDate(f.time + 900)} ${tzShort()}`;
+  $("dFocus").hidden = false;
+  $("dTrade").href = tradeUrl(f.symbol);
+  const stats = [
+    ["Flag price", fmtPrice(f.price), "candle close"],
+    ["Since flag", signed(f.now), f.hours != null ? `${fmtHours(f.hours)} ago` : ""],
+    ["Best so far", signed(f.peak), "within 24h"],
+    ["Worst so far", signed(f.trough), "within 24h"],
+    ["Volume, last 4h", `${f.vol_x.toFixed(1)}×`, "vs. its normal week"],
+    ["Candle size, last 4h", `${f.rng_x.toFixed(1)}×`, "vs. its normal week"],
+    ["Price, last 4h", signed(f.ret4), `24h ${signed(f.ret24)}`],
+    ["Long/short accounts", f.ls == null ? "—" : f.ls.toFixed(2), isSqueeze(f) ? "more shorts · squeeze setup" : f.ls == null ? "not recorded" : "more longs"],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  if (quiet) return;
+  if (scroll) $("detail").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  loadFutures(f.symbol);
+  await drawSymbol(f.symbol);
+  if (pp.sel !== f) return;
+  const same = (pp.data.flags || []).filter((x) => x.symbol === f.symbol);
+  candleSeries.setMarkers(same.map((x) => ({ time: x.time, position: "belowBar", shape: x.id === f.id ? "arrowUp" : "circle",
+    color: x.id === f.id ? css("--accent") : css("--muted"), text: x.id === f.id ? "watch" : "" })).sort((p, q) => p.time - q.time));
+  for (const pl of priceLines) candleSeries.removePriceLine(pl);
+  priceLines = [candleSeries.createPriceLine({ price: f.price, color: css("--accent"), lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "flag" })];
+  zoomToAlert(f);
+}
+
+$("ppPeriod").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  pp.period = Number(b.dataset.v);
+  $("ppPeriod").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  loadPrepump();
+});
+$("ppPeriod").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === pp.period)));
+$("ppSqueeze").addEventListener("change", (e) => { pp.squeezeOnly = e.target.checked; renderPrepump(); });
+setInterval(() => { if (state.view === "alerts") loadPrepump(); }, 15000);
+
+// ------------------------------------------------------------------ background data collection status
+async function loadCollector() {
+  let c;
+  try { c = await (await fetch("/api/collector")).json(); } catch { return; }
+  const ago = (t) => (t ? `${Math.max(0, Math.round((Date.now() / 1000 - t) / 60))} min ago` : "starting…");
+  const sol = c.solana || {}, sen = c.sentiment || {};
+  $("collectLine").textContent = !c.running ? "Background data collection is off."
+    : `Collecting in the background · Solana memecoins: ${sol.pools || 0} pools, ${fmtInt(sol.trades_today || 0)} trades with wallets today (${ago(sol.last)})` +
+      `${sol.error ? ` · last error ${sol.error}` : ""} · Bybit long/short, open interest & funding: ${sen.coins || 0} coins every 15 min (${ago(sen.last)})` +
+      `${sen.error ? ` · last error ${sen.error}` : ""}`;
+}
+setInterval(() => { if (state.view === "alerts") loadCollector(); }, 30000);
+loadPrepump();
+loadCollector();
 
 // ------------------------------------------------------------------ time zone switch
 function renderClock() {

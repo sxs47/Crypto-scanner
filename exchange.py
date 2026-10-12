@@ -118,3 +118,25 @@ def klines(symbol, interval, start_ms, end_ms):
 
 def trade_url(symbol):
     return f"https://www.bybit.com/trade/usdt/{symbol}"
+
+
+def live_bars(symbol, start_ms):
+    """15m candles from `start_ms` up to now, built from 1m candles — including the one still forming.
+
+    Returns oldest-first dicts {time (s), open, high, low, close, volume (USDT)}.
+    """
+    batch = get("/v5/market/kline", {"category": CATEGORY, "symbol": symbol, "interval": "1",
+                                     "start": start_ms, "limit": 200})["list"]  # newest first
+    bars = {}
+    for r in sorted(batch, key=lambda r: int(r[0])):
+        t = int(r[0])
+        if t < start_ms:
+            continue
+        k = t // 900_000 * 900
+        o, h, l, c, v = float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[6])
+        b = bars.get(k)
+        if b is None:
+            bars[k] = {"time": k, "open": o, "high": h, "low": l, "close": c, "volume": v}
+        else:
+            b.update(high=max(b["high"], h), low=min(b["low"], l), close=c, volume=b["volume"] + v)
+    return list(bars.values())

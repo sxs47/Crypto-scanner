@@ -15,7 +15,7 @@ edge in the data (mainly smaller drawdowns).
 |---|---|
 | **Pumps** | Every +30%-in-24h move over the last ~90 days, with charts |
 | **Signals** | Model-scored volatility watchlist and its out-of-sample backtest |
-| **Alerts** | Live 15m setups (Trend / Ignition), 1-hour follow-through check, EMA/MACD charts, futures context (open interest, funding, long/short), notifications |
+| **Alerts** | **Pre-pump watch** (volume and candle size jumped 8×/3× while price is flat; "squeeze setup" when most accounts are short) with its 30-day track record; live 15m setups (Trend / Ignition), 1-hour follow-through check, EMA/MACD charts, futures context (open interest, funding, long/short), notifications |
 | **Trend** | Daily EMA20/50 trend rule with volatility-target position sizes: today's status per coin and a backtest since 2020 |
 | **Planner** | Risk-based position sizing for Bybit futures: size, leverage, liquidation price, fees, funding, plus a risk-of-ruin simulation |
 | **Journal** | Your closed trades (Bybit "Closed P&L" CSV import or manual entry) with win rate, expectancy and P&L by coin / hour / weekday / side; stored in `data/journal.json`, not in git |

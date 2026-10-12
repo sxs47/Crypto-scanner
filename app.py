@@ -25,7 +25,9 @@ from datetime import timedelta
 from flask import Flask, abort, jsonify, redirect, request, send_from_directory, session
 
 import auth
+import collector
 import notify
+import prepump
 
 import exchange
 import futures
@@ -108,6 +110,9 @@ _live_state = {"enabled": True, "running": False, "last_scan": None, "next_scan"
                "duration": None, "new": 0, "message": "Starting…"}
 ALERT_KEEP_H = 72
 _trend_state = {"running": False, "day": None, "message": None, "finished": None}
+_ticks = {}                    # symbol -> {"bars": [live 15m bars after the last stored candle], "at": time}
+LIVE_PRICE_S = 30
+_pp = {"flags": {}, "ready": False, "record": None, "record_key": None, "base": None}  # pre-pump watch
 
 
 # --------------------------------------------------------------------------- #
@@ -126,6 +131,7 @@ def load_frames():
         _live_cache = None
     print(f"Loaded {len(_frames)} pairs in {time.time() - t0:.1f}s")
     backfill_alerts()
+    threading.Thread(target=build_prepump, daemon=True).start()
     # Score the latest candles in the background so the Signals page opens fast
     if signals.MODEL_PATH.exists():
         threading.Thread(target=get_live, daemon=True).start()
@@ -198,7 +204,9 @@ def run_scan(threshold, window_hours):
 # --------------------------------------------------------------------------- #
 @app.get("/")
 def index():
-    return send_from_directory(app.static_folder, "index.html")
+    resp = send_from_directory(app.static_folder, "index.html")
+    resp.headers["Cache-Control"] = "no-cache"  # always check for a newer page after an update
+    return resp
 
 
 @app.get("/api/scan")
@@ -409,6 +417,10 @@ def run_live_cycle():
     fresh = _add_alerts(items, fresh_after)
     new = len(fresh)
     _telegram_after_scan(fresh)
+    try:
+        update_prepump(results, fresh_after)
+    except Exception as e:
+        print(f"pre-pump watch: {e}")
     if updated and signals.MODEL_PATH.exists():
         threading.Thread(target=get_live, daemon=True).start()
     return len(updated), new, time.time() - t0
@@ -504,11 +516,153 @@ def api_alerts():
     meta = exchange.symbols()
     for a in alerts:
         df = frames.get(a["symbol"])
-        a.update({k: clean(v) for k, v in live.outcome(df, a).items()} if df is not None else {})
+        a.update({k: clean(v) for k, v in live_adjust(live.outcome(df, a), a).items()} if df is not None else {})
         a["tags"] = meta.get(a["symbol"], {}).get("tags", [])
     alerts.sort(key=lambda a: (-a["time"], a["symbol"]))
     return jsonify({"live": _live_state, "now": time.time(), "alerts": alerts, "stats": _setup_stats(),
                     "coins": len(frames)})
+
+
+# --------------------------------------------------------------------------- #
+# Live prices between 15m scans (1m candles for coins with an open alert or flag)
+# --------------------------------------------------------------------------- #
+def fetch_live(symbol):
+    """Live 15m bars after the last stored candle, cached for 15s."""
+    tk = _ticks.get(symbol)
+    if tk and time.time() - tk["at"] < 15:
+        return tk
+    df = frame_for(symbol)
+    if df is None:
+        return None
+    last = df["close"].last_valid_index()
+    start_ms = int(last.timestamp() * 1000) + 900_000
+    if start_ms < (time.time() - 6 * 3600) * 1000:
+        return None  # stored candles are far behind; the next scan catches up
+    tk = {"bars": exchange.live_bars(symbol, start_ms), "at": time.time()}
+    _ticks[symbol] = tk
+    return tk
+
+
+def _live_prices_loop():
+    while True:
+        cutoff = time.time() - 25 * 3600
+        with _lock:
+            syms = {a["symbol"] for a in _alerts.values() if a["time"] >= cutoff}
+            syms |= {f["symbol"] for f in _pp["flags"].values() if f["time"] >= cutoff}
+        for sym in [k for k in _ticks if k not in syms]:
+            _ticks.pop(sym, None)
+        if not _live_state["running"]:
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                list(pool.map(lambda s: _safe(fetch_live, s), syms))
+        time.sleep(LIVE_PRICE_S)
+
+
+def _safe(fn, *a):
+    try:
+        return fn(*a)
+    except Exception:
+        return None
+
+
+def live_adjust(res, item):
+    """Move an alert's/flag's result on to the live price (between 15m candle closes)."""
+    tk = _ticks.get(item["symbol"])
+    if not tk or not tk["bars"] or time.time() - tk["at"] > 3 * LIVE_PRICE_S:
+        return res
+    entry, end = item["price"], item["time"] + 900 + 24 * 3600
+    res["now"] = tk["bars"][-1]["close"] / entry - 1
+    res["hours"] = (time.time() - item["time"] - 900) / 3600
+    res["live_at"] = tk["at"]
+    inside = [b for b in tk["bars"] if b["time"] < end]
+    if inside and not res.get("done"):
+        hi = max(b["high"] for b in inside) / entry - 1
+        lo = min(b["low"] for b in inside) / entry - 1
+        res["peak"] = hi if res.get("peak") is None else max(res["peak"], hi)
+        res["trough"] = lo if res.get("trough") is None else min(res["trough"], lo)
+        if "reached5" in res:
+            res.update(reached5=res["peak"] >= 0.05, reached10=res["peak"] >= 0.10)
+    return res
+
+
+@app.get("/api/live_bars/<symbol>")
+def api_live_bars(symbol):
+    try:
+        tk = fetch_live(symbol.upper())
+    except Exception as e:
+        return jsonify({"bars": [], "error": str(e)})
+    return jsonify({"bars": (tk or {}).get("bars", []), "at": (tk or {}).get("at")})
+
+
+# --------------------------------------------------------------------------- #
+# Pre-pump watch
+# --------------------------------------------------------------------------- #
+def build_prepump():
+    """All flags in the stored candles (for the track record), plus base rates."""
+    with _lock:
+        frames = dict(_frames)
+    items = prepump.fill_ls([f for s, df in frames.items() for f in prepump.flags(s, df)])
+    base = prepump.base_rates(frames)
+    with _lock:
+        _pp["flags"].update({f["id"]: f for f in items})
+        _pp.update(ready=True, base=base, record_key=None)
+    print(f"Pre-pump watch: {len(items)} flags in stored candles")
+
+
+def update_prepump(results, fresh_after):
+    if not _pp["ready"]:
+        return
+    with _lock:
+        last = {}
+        for f in _pp["flags"].values():
+            last[f["symbol"]] = max(last.get(f["symbol"], 0), f["time"])
+    new = []
+    for sym, df, since in results:
+        if df is None:
+            continue
+        for f in prepump.flags(sym, df.iloc[-prepump.TAIL:], since, last.get(sym)):
+            fresh = f["time"] >= fresh_after
+            f["ls"] = prepump.ls_at(sym, f["time"], live=fresh)
+            f["source"] = "live" if fresh else "history"
+            new.append(f)
+    if not new:
+        return
+    with _lock:
+        _pp["flags"].update({f["id"]: f for f in new})
+    if _pp["base"] is None or time.time() - _pp["base"]["at"] > 86400:
+        with _lock:
+            frames = dict(_frames)
+        _pp["base"] = prepump.base_rates(frames)
+    meta = exchange.symbols()
+    batch = [{**f, "tags": meta.get(f["symbol"], {}).get("tags", [])} for f in new if f["source"] == "live"]
+    batch = [f for f in batch if notify.wants_prepump(f)]
+    if batch:
+        notify.send(notify.format_prepump(batch))
+
+
+@app.get("/api/prepump")
+def api_prepump():
+    hours = min(float(request.args.get("hours", 72)), 24 * 30)
+    with _lock:
+        items = [dict(f) for f in _pp["flags"].values()]
+        frames = dict(_frames)
+        key = (_loaded_at, len(items))
+    if not _pp["ready"]:
+        return jsonify({"ready": False})
+    if _pp["record_key"] != key:
+        _pp.update(record=prepump.track_record(items, frames), record_key=key)
+    cutoff = time.time() - hours * 3600
+    meta = exchange.symbols()
+    recent = []
+    for f in items:
+        df = frames.get(f["symbol"])
+        if f["time"] < cutoff or df is None:
+            continue
+        f.update({k: clean(v) for k, v in live_adjust(prepump.outcome(df, f), f).items()})
+        f["tags"] = meta.get(f["symbol"], {}).get("tags", [])
+        recent.append(f)
+    recent.sort(key=lambda f: (-f["time"], f["symbol"]))
+    return jsonify({"ready": True, "now": time.time(), "flags": recent, "record": _pp["record"],
+                    "base": _pp["base"], "rule": prepump.RULE})
 
 
 # --------------------------------------------------------------------------- #
@@ -601,6 +755,11 @@ def api_quote(symbol):
     return jsonify(q)
 
 
+@app.get("/api/collector")
+def api_collector():
+    return jsonify(collector.status)
+
+
 @app.get("/api/journal")
 def api_journal():
     return jsonify(journal.all_trades())
@@ -680,6 +839,8 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--set-password", action="store_true", help="set or change the login password, then exit")
     ap.add_argument("--setup-telegram", action="store_true", help="connect a Telegram bot for alerts, then exit")
+    ap.add_argument("--set-key", metavar="NAME", help="save an API key privately (helius or etherscan), then exit")
+    ap.add_argument("--no-collect", action="store_true", help="don't run the background data collector")
     args = ap.parse_args()
 
     if args.set_password:
@@ -688,11 +849,17 @@ if __name__ == "__main__":
     if args.setup_telegram:
         notify.setup_cli()
         sys.exit()
+    if args.set_key:
+        collector.set_key_cli(args.set_key)
+        sys.exit()
     if args.host not in ("127.0.0.1", "localhost") and not auth.enabled():
         sys.exit("Refusing to serve on a public address without a password. Run: python app.py --set-password")
 
     load_frames()
     threading.Thread(target=_live_loop, daemon=True).start()
+    threading.Thread(target=_live_prices_loop, daemon=True).start()
+    if not args.no_collect:
+        collector.start()
     shown = "127.0.0.1" if args.host in ("0.0.0.0", "localhost") else args.host
     print(f"Open http://{shown}:{args.port}" + ("  (login required)" if auth.enabled() else ""))
     try:
