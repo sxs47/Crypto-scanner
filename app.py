@@ -28,10 +28,12 @@ import auth
 import collector
 import news
 import notify
+import atrstop
 import blowoff
 import carry
 import prepump
 import radar
+import runpicks
 
 import exchange
 import futures
@@ -570,6 +572,10 @@ def _live_prices_loop():
             syms |= {f["symbol"] for f in _pp["flags"].values() if f["time"] >= cutoff}
             if _rd["data"]:
                 syms |= {p["symbol"] for p in _rd["data"]["picks"] if p["time"] >= cutoff}
+            if _rd.get("runs"):
+                syms |= {p["symbol"] for p in _rd["runs"]["picks"] if not p["done"]}
+            if _rd.get("atr"):
+                syms |= {x["symbol"] for x in _rd["atr"]["items"] if x["time"] >= cutoff}
             if _bo["data"]:
                 syms |= {x["symbol"] for x in _bo["data"]["items"] if x["status"] in ("watching", "open")}
         for sym in [k for k in _ticks if k not in syms]:
@@ -741,11 +747,43 @@ def refresh_radar():
             if batch and notify.wants_radar():
                 notify.send(notify.format_radar(batch, data["record"]))
         _rd.update(data=data, seen=ids, message=None)
+        # ▲ run picks: refresh positioning, then score (a few minutes)
+        try:
+            runpicks.update_store(sorted(syms))
+            runs = runpicks.scan(syms)
+            if runs is not None:
+                _rd["runs"] = runs
+        except Exception as e:
+            print(f"run picks: {e}")
+        try:
+            _rd["atr"] = atrstop.scan(syms)
+        except Exception as e:
+            print(f"atr_sm: {e}")
     except Exception as e:
         _rd["message"] = f"Radar failed: {e}"
         print(f"radar: {e}")
     finally:
         _rd["running"] = False
+
+
+@app.get("/api/atr")
+def api_atr():
+    a = _rd.get("atr")
+    if not a:
+        return jsonify({"ready": False})
+    days = min(float(request.args.get("days", 7)), 120)
+    cutoff = time.time() - days * 86400
+    items = []
+    for x in a["items"]:
+        if x["time"] < cutoff:
+            continue
+        x = dict(x)
+        tk = _ticks.get(x["symbol"])
+        if tk and tk["bars"] and time.time() - tk["at"] < 3 * LIVE_PRICE_S:
+            x["now"] = tk["bars"][-1]["close"] / x["price"] - 1
+        items.append({k: clean(v) if isinstance(v, float) else v for k, v in x.items()})
+    items.sort(key=lambda x: -x["time"])
+    return jsonify({"ready": True, "items": items, "record": a["record"], "settings": a["settings"], "built": a["built"]})
 
 
 @app.get("/api/radar")
@@ -765,7 +803,18 @@ def api_radar():
         x["tags"] = meta.get(p["symbol"], {}).get("tags", [])
         picks.append(x)
     picks.sort(key=lambda x: (-x["time"], -x["score"]))
-    return jsonify({"ready": True, "now": time.time(), "picks": picks, "record": data["record"], "report": data["report"],
+    runs = None
+    if _rd.get("runs"):
+        rr = _rd["runs"]
+        rp = []
+        for p in rr["picks"]:
+            x = dict(p)
+            tk = _ticks.get(p["symbol"])
+            if tk and tk["bars"] and time.time() - tk["at"] < 3 * LIVE_PRICE_S:
+                x["now"] = tk["bars"][-1]["close"] / p["price"] - 1
+            rp.append({k: clean(v) if isinstance(v, float) else v for k, v in x.items()})
+        runs = {"picks": rp, "record": rr["record"], "report": rr["report"], "built": rr["built"]}
+    return jsonify({"ready": True, "now": time.time(), "picks": picks, "record": data["record"], "report": data["report"], "runs": runs,
                     "built": data["built"], "running": _rd["running"], "message": _rd["message"]})
 
 

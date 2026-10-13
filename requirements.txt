@@ -4,3 +4,4 @@ flask>=3.0
 scikit-learn>=1.4
 waitress>=3.0
 websocket-client>=1.6
+ta>=0.11

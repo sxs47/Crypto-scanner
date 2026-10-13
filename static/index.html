@@ -731,6 +731,23 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
     </div>
   </section>
 
+  <section class="card pp-card" id="atCard">
+    <div class="card-h"><h2>ATR_SM Buy · 4h (5 / 5) · paper</h2><span class="sub" id="atSub"></span>
+      <div class="pp-tools">
+        <div class="field">Period
+          <div class="seg" id="atDays"><button data-v="1">24h</button><button data-v="7">7 days</button><button data-v="30">30 days</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="pp-note" id="atNote"></p>
+    <div class="table-scroll pp-scroll">
+      <table>
+        <thead id="atHead"></thead>
+        <tbody id="atBody"></tbody>
+      </table>
+    </div>
+  </section>
+
   <div class="filters" role="toolbar" aria-label="Alert filters">
     <div class="field">Setup
       <div class="seg" id="aSetup"><button data-v="all">All</button><button data-v="trend">Trend</button><button data-v="ignition">Ignition</button></div>
@@ -872,6 +889,16 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
     </div>
     <span class="meta" id="rdStatus"></span>
   </div>
+  <section class="card pp-card" id="rnCard">
+    <div class="card-h"><h2>▲ Run picks (paper)</h2><span class="sub" id="rnSub"></span></div>
+    <p class="pp-note" id="rnNote"></p>
+    <div class="table-scroll pp-scroll">
+      <table>
+        <thead id="rnHead"></thead>
+        <tbody id="rnBody"></tbody>
+      </table>
+    </div>
+  </section>
   <section class="kpis" id="rdKpis"></section>
   <section class="main">
     <div class="card">
@@ -2184,7 +2211,7 @@ function setView(v) {
     al.unseen = 0;
     updateBadge();
     renderAlerts();
-    if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); else if (al.rows.length) showAlert(al.rows[0]);
+    if (at.sel) showAtr(at.sel); else if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); else if (al.rows.length) showAlert(al.rows[0]);
   } else {
     renderCharts(state.rows, Math.round(state.threshold * 100));
     if (state.selected) selectEvent(state.selected, false);
@@ -2200,7 +2227,7 @@ function refreshDetail() {
   if (state.view === "radar") { if (rd.sel) showRadar(rd.sel, false); return; }
   if (state.view === "carry") return;
   if (state.view === "trend") { if (tr.report) renderTrend(); if (tr.sel) showTrendCoin(tr.sel, false); }
-  else if (state.view === "alerts") { if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); }
+  else if (state.view === "alerts") { if (at.sel) showAtr(at.sel); else if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); }
   else if (state.view === "signals") { if (sig.sel) showSignalCoin(sig.sel, false); }
   else if (state.selected) selectEvent(state.selected, false);
   else if (state.coin) showCoin(state.coin);
@@ -2248,7 +2275,7 @@ async function loadAlerts() {
   renderLive();
   if (state.view === "alerts") {
     renderAlerts();
-    if (!al.sel && !pp.sel && !bo.sel && al.rows.length) showAlert(al.rows[0]);
+    if (!al.sel && !pp.sel && !bo.sel && !at.sel && al.rows.length) showAlert(al.rows[0]);
   }
 }
 
@@ -2457,6 +2484,7 @@ async function showAlert(a, scroll = true, quiet = false) {
   al.sel = a;
   if (pp.sel) { pp.sel = null; renderPrepump(); }
   if (bo.sel) { bo.sel = null; renderBlowoff(); }
+  if (typeof at !== "undefined" && at.sel) { at.sel = null; renderAtr(); }
   showDetail();
   $("dTitle").replaceChildren(base(a.symbol), el("span", { class: "q", text: "/USDT" }));
   $("dPill").textContent = `${SETUP_LABEL[a.setup]} · ${fmtDate(a.time + 900)} ${tzShort()}`;
@@ -3789,11 +3817,12 @@ async function loadRadar() {
   rd.data = d;
   if (rd.sel && d.picks) rd.sel = d.picks.find((p) => p.id === rd.sel.id) || rd.sel;
   renderRadar();
+  renderRuns();
   clearTimeout(rd.timer);
   if (!d.ready || d.running) rd.timer = setTimeout(loadRadar, 8000);
   if (state.view === "radar") {
     if (rd.sel) showRadar(rd.sel, true);
-    else if (d.picks && d.picks.length) showRadar(d.picks[0], false, false);
+    else if (!rn.sel && d.picks && d.picks.length) showRadar(d.picks[0], false, false);
   }
 }
 
@@ -3847,6 +3876,7 @@ function renderRadar() {
 
 async function showRadar(p, quiet = false, scroll = true) {
   rd.sel = p;
+  if (rn.sel) { rn.sel = null; renderRuns(); }
   if (!quiet) renderRadar();
   showDetail();
   $("dTitle").replaceChildren(base(p.symbol), el("span", { class: "q", text: "/USDT" }));
@@ -3882,9 +3912,104 @@ $("rdDays").addEventListener("click", (e) => {
   rd.days = Number(b.dataset.v);
   $("rdDays").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
   loadRadar();
+  renderRuns();
 });
 $("rdDays").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === rd.days)));
 setInterval(() => { if (state.view === "radar") loadRadar(); }, 30000);
+
+// ------------------------------------------------------------------ ▲ run picks (Radar tab, paper)
+const rn = { sel: null };
+const rnStatus = (s, label) => s === "hit" ? el("span", { class: "check", text: `${label} ✓` })
+  : s === "stopped" ? el("span", { class: "negt", text: "stop ✗" })
+  : s === "neither" ? el("span", { class: "dim", text: "neither" })
+  : el("span", { class: "dim", text: "…" });
+const RN_COLS = [
+  { label: () => `Flagged (${tzShort()})`, cell: (p) => {
+      const t = p.time + 900, sameDay = tzDay(t) === tzDay(Date.now() / 1000);
+      const n = el("span", {}, sameDay ? fmtClock(t).slice(0, 5) : fmtDate(t));
+      if (Date.now() / 1000 - t < 4 * 3600) n.append(el("span", { class: "new-b", text: "NEW" }));
+      return n;
+    } },
+  { label: "Coin", cell: (p) => symNode(p.symbol) },
+  { label: "Why", cell: (p) => el("span", { class: "dim", text: (p.reasons || []).join(" · ") }) },
+  { label: "ATR_SM 4h", cell: (p) => p.atr_long
+      ? el("span", { class: "check", title: "ATR_SM (5/5) was in Buy mode at the pick", text: p.atr_buy_hours <= 24 ? `▲ fresh Buy (${p.atr_buy_hours}h)` : "▲ Buy mode" })
+      : el("span", { class: "dim", text: "—" }) },
+  { label: "Best before −10% stop", cell: (p) => el("b", {}, changeNode(p.best_10)) },
+  { label: "+10% before −5%", cell: (p) => rnStatus(p.t10_5, "+10%") },
+  { label: "+20% before −10%", cell: (p) => rnStatus(p.t20_10, "+20%") },
+  { label: "Now", cell: (p) => changeNode(p.now) },
+];
+
+function renderRuns() {
+  const d = rd.data;
+  const R = d && d.runs;
+  if (!R) {
+    $("rnNote").textContent = d && d.ready ? "Scoring run picks… (a few minutes after each 4h candle)" : "";
+    $("rnBody").replaceChildren();
+    return;
+  }
+  const r = R.record, res = (R.report && R.report.research) || {};
+  const cut = rd.days >= 365 ? 0 : Date.now() / 1000 - rd.days * 86400;
+  const picks = (R.picks || []).filter((p) => p.time >= cut).sort((a, b) => b.time - a.time);
+  $("rnNote").replaceChildren(
+    el("b", { text: "Coins with the best chance to run UP before they fall — judged without assuming your exit. " }),
+    "A model reads ~173 TradingView indicators (4h + daily), volume and Bybit positioning (long/short ratio, funding, open interest). ",
+    `Research: ${res.p10_5 || "41–46%"} reached +10% before −5%, ${res.p20_10 || "41–47%"} +20% before −10% (break-even ${res.breakeven || "33%"}; random ${res.random_p10_5 || "29%"} / ${res.random_p20_10 || "18–19%"}). `,
+    r && r.finished ? el("b", { text: `Live since ${fmtDate(r.since).split(",")[0]} (${r.finished} finished picks): +10% before −5% ${pctf(r.t10_5, 0)} · +20% before −10% ${pctf(r.t20_10, 0)} · typical best before a −10% stop ${signed(r.best10_median)}. ` }) : "",
+    r && r.with_atr && r.with_atr.n ? `With ATR_SM in Buy mode: ${pctf(r.with_atr.t10_5, 0)} reached +10% before −5%, best before −10% stop ${signed(r.with_atr.best10)} (${r.with_atr.n}); without: ${pctf(r.without_atr.t10_5, 0)}, ${signed(r.without_atr.best10)} (${r.without_atr.n}). ` : "",
+    "Paper-tracked. You choose the exit; use a stop. Not advice.",
+  );
+  $("rnSub").textContent = `${picks.length} pick${picks.length === 1 ? "" : "s"} · updated after each 4h candle${R.built ? ` · ${fmtClock(R.built).slice(0, 5)} ${tzShort()}` : ""}`;
+  $("rnHead").replaceChildren(el("tr", {}, ...RN_COLS.map((c) => el("th", { text: typeof c.label === "function" ? c.label() : c.label }))));
+  if (!picks.length) {
+    $("rnBody").replaceChildren(el("tr", {}, el("td", { colspan: RN_COLS.length, class: "empty", text: "No run picks in this period." })));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const p of picks) {
+    const tr = el("tr");
+    if (rn.sel && rn.sel.id === p.id) tr.classList.add("sel");
+    for (const c of RN_COLS) tr.append(el("td", {}, c.cell(p)));
+    tr.addEventListener("click", () => showRun(p));
+    frag.append(tr);
+  }
+  $("rnBody").replaceChildren(frag);
+}
+
+async function showRun(p) {
+  rn.sel = p;
+  rd.sel = null;
+  renderRuns();
+  renderRadar();
+  showDetail();
+  $("dTitle").replaceChildren(base(p.symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = `▲ Run pick (paper) · ${fmtDate(p.time + 900)} ${tzShort()}`;
+  $("dFocus").hidden = false;
+  $("dTrade").href = tradeUrl(p.symbol);
+  const stats = [
+    ["Price at pick", fmtPrice(p.price), "4h candle close"],
+    ["Run vs crash", `${pctf(p.p_up, 0)} / ${pctf(p.p_dn, 0)}`, "model's chance of +15% / −15% first (3 days)"],
+    ["Why", (p.reasons || []).join(" · "), ""],
+    ["Best before −5% / −10% stop", `${signed(p.best_5)} / ${signed(p.best_10)}`, p.done ? "final" : "so far"],
+    ["Now", signed(p.now), p.done ? "followed for 7 days" : "still being followed"],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  $("detail").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  loadFutures(p.symbol);
+  await drawSymbol(p.symbol);
+  if (rn.sel !== p) return;
+  candleSeries.setMarkers([{ time: p.time, position: "belowBar", shape: "arrowUp", color: css("--accent"), text: "▲ run pick" }]);
+  for (const pl of priceLines) candleSeries.removePriceLine(pl);
+  priceLines = [
+    candleSeries.createPriceLine({ price: p.price, color: css("--accent"), lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "pick" }),
+    candleSeries.createPriceLine({ price: p.price * 0.95, color: css("--down"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "−5%" }),
+    candleSeries.createPriceLine({ price: p.price * 0.90, color: css("--down"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "−10%" }),
+  ];
+  zoomToAlert(p);
+}
 
 // ------------------------------------------------------------------ carry tab (spot long + perp short, collect funding)
 const cy = { data: null, minVol: 5e6, spotOnly: true, sel: null, capital: 1000, lev: 1, quote: null };
@@ -4006,6 +4131,108 @@ $("cyLev").addEventListener("click", (e) => {
 $("cyLev").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === cy.lev)));
 setInterval(() => { if (state.view === "carry") loadCarry(); }, 5 * 60 * 1000);
 
+// ------------------------------------------------------------------ ATR_SM Buy (4h, paper) — Alerts tab
+const at = { data: null, sel: null, days: 7 };
+const atStatus = (s, label) => s === "hit" ? el("span", { class: "check", text: `${label} ✓` })
+  : s === "stopped" ? el("span", { class: "negt", text: "stop ✗" })
+  : s === "neither" ? el("span", { class: "dim", text: "neither" }) : el("span", { class: "dim", text: "…" });
+const AT_COLS = [
+  { label: () => `Buy (${tzShort()})`, cell: (x) => {
+      const t = x.time + 900, sameDay = tzDay(t) === tzDay(Date.now() / 1000);
+      const n = el("span", {}, sameDay ? fmtClock(t).slice(0, 5) : fmtDate(t));
+      if (Date.now() / 1000 - t < 4 * 3600) n.append(el("span", { class: "new-b", text: "NEW" }));
+      return n;
+    } },
+  { label: "Coin", cell: (x) => symNode(x.symbol) },
+  { label: "Line below", cell: (x) => el("span", { title: "The indicator's own trailing line (its Sell level) — use a tighter stop or a smaller size", text: `−${(x.stop_dist * 100).toFixed(0)}%` }) },
+  { label: "+10% before −5%", cell: (x) => atStatus(x.t10_5, "+10%") },
+  { label: "+20% before −10%", cell: (x) => atStatus(x.t20_10, "+20%") },
+  { label: "Best before Sell", cell: (x) => el("b", {}, changeNode(x.best_until_sell)) },
+  { label: "Status", cell: (x) => x.sold ? el("span", { class: x.sold.ret >= 0 ? "pos" : "negt", text: `Sell at ${signed(x.sold.ret)}` })
+      : el("span", { class: "check", text: "still Buy" }) },
+  { label: "Now", cell: (x) => changeNode(x.now) },
+];
+
+async function loadAtr() {
+  let d;
+  try { d = await (await fetch(`/api/atr?days=${at.days}`)).json(); } catch { return; }
+  at.data = d;
+  renderAtr();
+}
+
+function renderAtr() {
+  const d = at.data;
+  if (!d) return;
+  if (!d.ready) { $("atNote").textContent = "Waiting for the first 4h scan (a few minutes after the app starts)…"; $("atBody").replaceChildren(); return; }
+  const r = d.record;
+  $("atNote").replaceChildren(
+    el("b", { text: `ATR_SM_BuySell (by dysrupt / nifty_alchemist) on 4h candles, Period ${d.settings.period} / Multiplier ${d.settings.mult}. ` }),
+    "Best of 63 settings tested on 15m, 1h and 4h. Test (12 Sep–12 Oct): 47% of Buys reached +10% before −5%, 34% +20% before −10% (random 32% / 23%, break-even 33%). ",
+    r.finished ? el("b", { text: `Live since ${fmtDate(r.since).split(",")[0]} (${r.finished} finished Buys): +10% before −5% ${pctf(r.t10_5, 0)} · +20% before −10% ${pctf(r.t20_10, 0)} · typical best before Sell ${signed(r.best_median)}. ` }) : "",
+    "The indicator's own line is often far below — use your own stop. Paper only, not advice.",
+  );
+  const items = d.items || [];
+  $("atSub").textContent = `${items.length} Buy signal${items.length === 1 ? "" : "s"} · ${r.long_now} coins in Buy mode now · checked every 4h`;
+  $("atHead").replaceChildren(el("tr", {}, ...AT_COLS.map((c) => el("th", { text: typeof c.label === "function" ? c.label() : c.label }))));
+  if (!items.length) { $("atBody").replaceChildren(el("tr", {}, el("td", { colspan: AT_COLS.length, class: "empty", text: "No Buy signals in this period." }))); return; }
+  const frag = document.createDocumentFragment();
+  for (const x of items) {
+    const tr = el("tr");
+    if (at.sel && at.sel.id === x.id) tr.classList.add("sel");
+    for (const c of AT_COLS) tr.append(el("td", {}, c.cell(x)));
+    tr.addEventListener("click", () => showAtr(x));
+    frag.append(tr);
+  }
+  $("atBody").replaceChildren(frag);
+}
+
+async function showAtr(x) {
+  at.sel = x;
+  al.sel = null;
+  if (pp.sel) { pp.sel = null; renderPrepump(); }
+  if (bo.sel) { bo.sel = null; renderBlowoff(); }
+  markAlertSelected();
+  renderAtr();
+  showDetail();
+  $("dTitle").replaceChildren(base(x.symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = `ATR_SM Buy · 4h (5/5) · ${fmtDate(x.time + 900)} ${tzShort()}`;
+  $("dFocus").hidden = false;
+  $("dTrade").href = tradeUrl(x.symbol);
+  const stats = [
+    ["Buy price", fmtPrice(x.price), "4h candle close"],
+    ["Indicator line", fmtPrice(x.line), `−${(x.stop_dist * 100).toFixed(1)}% · now ${fmtPrice(x.line_now)}`],
+    ["Best before Sell", signed(x.best_until_sell), x.sold ? "final" : "so far"],
+    ["Status", x.sold ? `Sell at ${signed(x.sold.ret)}` : "still Buy", x.sold ? fmtDate(x.sold.time) : ""],
+    ["Now", signed(x.now), ""],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  $("detail").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  loadFutures(x.symbol);
+  await drawSymbol(x.symbol);
+  if (at.sel !== x) return;
+  const m = [{ time: x.time, position: "belowBar", shape: "arrowUp", color: css("--up"), text: "Buy" }];
+  if (x.sold) m.push({ time: x.sold.time - 900, position: "aboveBar", shape: "arrowDown", color: css("--down"), text: "Sell" });
+  candleSeries.setMarkers(m);
+  for (const pl of priceLines) candleSeries.removePriceLine(pl);
+  priceLines = [
+    candleSeries.createPriceLine({ price: x.price, color: css("--accent"), lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "Buy" }),
+    candleSeries.createPriceLine({ price: x.line_now, color: css("--down"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "ATR line" }),
+  ];
+  zoomToAlert(x);
+}
+
+$("atDays").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  at.days = Number(b.dataset.v);
+  $("atDays").querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(y === b)));
+  loadAtr();
+});
+$("atDays").querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(Number(y.dataset.v) === at.days)));
+setInterval(() => { if (state.view === "alerts") loadAtr(); }, 60000);
+
 // ------------------------------------------------------------------ background data collection status
 async function loadCollector() {
   let c;
@@ -4023,6 +4250,7 @@ async function loadCollector() {
 setInterval(() => { if (state.view === "alerts") loadCollector(); }, 30000);
 loadPrepump();
 loadBlowoff();
+loadAtr();
 loadCollector();
 
 // ------------------------------------------------------------------ time zone switch
