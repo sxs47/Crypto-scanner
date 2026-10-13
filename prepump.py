@@ -12,6 +12,11 @@ One flag per coin per 24h. On the unseen month 5.1% of flags touched +30% within
 24h vs 1.6% for any coin at any time (3.2×); most flags still don't pump.
 "Squeeze setup" = Bybit long/short accounts ratio ≤ 1.3 (more accounts short),
 which hit +30% in 8% of flags in that month (small sample).
+
+"Volume before" = the coin's 24h volume ending 4h before the flag, × its normal daily
+volume (median of the previous 30 days). Flags with ≥6× ("volatile": the coin was
+already exploding) hit +30% within 48h about 2.5× as often as calm ones, but also
+dropped −15% about 4× as often — a bigger move, not a better direction.
 """
 
 import time
@@ -28,7 +33,8 @@ RET4_MIN, RET4_MAX, RET24_MAX = -0.03, 0.08, 0.15
 MIN_TURNOVER = 250_000
 SQUEEZE_LS = 1.3
 COOLDOWN_S = 24 * 3600
-TAIL = 1200           # candles needed for the 7-day baseline that ends 48h back
+TAIL = 3100           # candles needed: 30-day normal daily volume for "volume before"
+VOLATILE_X = 6.0      # volume before ≥ this × normal → "volatile"
 FEE = 0.0011          # Bybit taker, both sides
 
 
@@ -49,6 +55,7 @@ def features(df):
 def flags(symbol, df, since=None, last=None):
     """Flags on candles after `since` (UTC Timestamp); `last` = time of this coin's previous flag (unix s)."""
     f = features(df)
+    v24 = df["quote_volume"].fillna(0).rolling(96, min_periods=96).sum().to_numpy()
     m = ((f["vol_x"] >= VOL_X) & (f["rng_x"] >= RNG_X) & (f["ret4"] > RET4_MIN) & (f["ret4"] < RET4_MAX)
          & (f["ret24"] < RET24_MAX) & (f["turnover24"] >= MIN_TURNOVER) & df["close"].notna())
     out = []
@@ -60,9 +67,15 @@ def flags(symbol, df, since=None, last=None):
         if since is not None and t <= since:
             continue
         r = f.loc[t]
+        i = df.index.get_loc(t)
+        vb = None
+        if i >= 96 * 31:
+            normal = np.nanmedian(v24[i - 96 * np.arange(1, 31)])
+            if normal > 0 and not np.isnan(v24[i - 16]):
+                vb = float(v24[i - 16] / normal)
         out.append({"id": f"{symbol}|{ts}", "symbol": symbol, "time": ts, "price": float(df.at[t, "close"]),
                     "vol_x": float(r["vol_x"]), "rng_x": float(r["rng_x"]), "ret4": float(r["ret4"]),
-                    "ret24": float(r["ret24"]), "turnover24": float(r["turnover24"]), "ls": None})
+                    "ret24": float(r["ret24"]), "turnover24": float(r["turnover24"]), "ls": None, "vol_before": vb})
     return out
 
 
@@ -150,7 +163,7 @@ def _summary(rows):
     tr = np.array([r["trough"] or 0 for r in rows])
     r24 = np.array([r["ret_24h"] for r in rows])
     return {"n": n, "hit15": float((pk >= 0.15).mean()), "hit30": float((pk >= 0.30).mean()),
-            "drop20": float((tr <= -0.20).mean()), "avg_24h": float(r24.mean() - FEE),
+            "drop15": float((tr <= -0.15).mean()), "drop20": float((tr <= -0.20).mean()), "avg_24h": float(r24.mean() - FEE),
             "median_24h": float(np.median(r24) - FEE)}
 
 
@@ -169,7 +182,9 @@ def track_record(items, frames, days=30):
     return {"days": days, "all": _summary(done),
             "per_day": len(done) / max(1, (time.time() - (first or time.time())) / 86400) if done else 0,
             "squeeze": _summary([r for r in known if r["ls"] <= SQUEEZE_LS]),
-            "other": _summary([r for r in known if r["ls"] > SQUEEZE_LS])}
+            "other": _summary([r for r in known if r["ls"] > SQUEEZE_LS]),
+            "volatile": _summary([r for r in done if (r.get("vol_before") or 0) >= VOLATILE_X]),
+            "calm": _summary([r for r in done if r.get("vol_before") is not None and r["vol_before"] < VOLATILE_X])}
 
 
 def base_rates(frames, days=30):
@@ -192,4 +207,4 @@ def base_rates(frames, days=30):
 
 
 RULE = {"vol_x": VOL_X, "rng_x": RNG_X, "ret4": [RET4_MIN, RET4_MAX], "ret24_max": RET24_MAX,
-        "min_turnover": MIN_TURNOVER, "squeeze_ls": SQUEEZE_LS}
+        "min_turnover": MIN_TURNOVER, "squeeze_ls": SQUEEZE_LS, "volatile_x": VOLATILE_X}

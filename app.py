@@ -26,8 +26,12 @@ from flask import Flask, abort, jsonify, redirect, request, send_from_directory,
 
 import auth
 import collector
+import news
 import notify
+import blowoff
+import carry
 import prepump
+import radar
 
 import exchange
 import futures
@@ -113,6 +117,8 @@ _trend_state = {"running": False, "day": None, "message": None, "finished": None
 _ticks = {}                    # symbol -> {"bars": [live 15m bars after the last stored candle], "at": time}
 LIVE_PRICE_S = 30
 _pp = {"flags": {}, "ready": False, "record": None, "record_key": None, "base": None}  # pre-pump watch
+_bo = {"data": None, "running": False, "seen": set()}
+_rd = {"data": None, "running": False, "seen": None, "bar": None, "message": "Starting…"}            # big-move radar                                   # blow-off watch
 
 
 # --------------------------------------------------------------------------- #
@@ -132,6 +138,11 @@ def load_frames():
     print(f"Loaded {len(_frames)} pairs in {time.time() - t0:.1f}s")
     backfill_alerts()
     threading.Thread(target=build_prepump, daemon=True).start()
+    threading.Thread(target=refresh_blowoff, daemon=True).start()
+    if _rd["data"] is None:
+        threading.Thread(target=refresh_radar, daemon=True).start()
+    if carry.data()["data"] is None:
+        threading.Thread(target=carry.refresh, daemon=True).start()
     # Score the latest candles in the background so the Signals page opens fast
     if signals.MODEL_PATH.exists():
         threading.Thread(target=get_live, daemon=True).start()
@@ -419,6 +430,8 @@ def run_live_cycle():
     _telegram_after_scan(fresh)
     try:
         update_prepump(results, fresh_after)
+        if updated:
+            threading.Thread(target=refresh_blowoff, args=(fresh_after,), daemon=True).start()
     except Exception as e:
         print(f"pre-pump watch: {e}")
     if updated and signals.MODEL_PATH.exists():
@@ -494,6 +507,12 @@ def _live_loop():
             _live_state.update(running=False, next_scan=_next_boundary())
         elif _live_state["enabled"] and not _live_state["next_scan"]:
             _live_state["next_scan"] = _next_boundary()
+        cd = carry.data()["data"]
+        if cd and time.time() - cd["built"] > 3600 and not carry.data()["running"]:
+            threading.Thread(target=carry.refresh, daemon=True).start()
+        bar = int(time.time() // 14400)
+        if _rd["bar"] is not None and bar != _rd["bar"] and time.time() - bar * 14400 > 90 and not _rd["running"]:
+            threading.Thread(target=refresh_radar, daemon=True).start()
         if _trend_due():
             threading.Thread(target=refresh_trend, daemon=True).start()
         time.sleep(2)
@@ -549,6 +568,10 @@ def _live_prices_loop():
         with _lock:
             syms = {a["symbol"] for a in _alerts.values() if a["time"] >= cutoff}
             syms |= {f["symbol"] for f in _pp["flags"].values() if f["time"] >= cutoff}
+            if _rd["data"]:
+                syms |= {p["symbol"] for p in _rd["data"]["picks"] if p["time"] >= cutoff}
+            if _bo["data"]:
+                syms |= {x["symbol"] for x in _bo["data"]["items"] if x["status"] in ("watching", "open")}
         for sym in [k for k in _ticks if k not in syms]:
             _ticks.pop(sym, None)
         if not _live_state["running"]:
@@ -637,6 +660,141 @@ def update_prepump(results, fresh_after):
     batch = [f for f in batch if notify.wants_prepump(f)]
     if batch:
         notify.send(notify.format_prepump(batch))
+
+
+# --------------------------------------------------------------------------- #
+# Blow-off watch (short side, paper-tracked)
+# --------------------------------------------------------------------------- #
+def refresh_blowoff(fresh_after=None):
+    if _bo["running"]:
+        return
+    _bo["running"] = True
+    try:
+        with _lock:
+            frames = dict(_frames)
+        data = blowoff.scan_all(frames)
+        first = _bo["data"] is None
+        new = [x for x in data["items"] if x["entry_at"] and x["id"] not in _bo["seen"]
+               and fresh_after is not None and x["entry_at"] >= fresh_after]
+        _bo["seen"] |= {x["id"] for x in data["items"] if x["entry_at"]}
+        _bo["data"] = data
+        if not first and new:
+            meta = exchange.symbols()
+            batch = [{**x, "tags": meta.get(x["symbol"], {}).get("tags", [])} for x in new]
+            batch = [x for x in batch if notify.wants_blowoff(x)]
+            if batch:
+                notify.send(notify.format_blowoff(batch, data["phase"]))
+    except Exception as e:
+        print(f"blow-off watch: {e}")
+    finally:
+        _bo["running"] = False
+
+
+@app.get("/api/blowoff")
+def api_blowoff():
+    data = _bo["data"]
+    if not data:
+        return jsonify({"ready": False})
+    days = min(float(request.args.get("days", 7)), 120)
+    cutoff = time.time() - days * 86400
+    meta = exchange.symbols()
+    items = []
+    for x in data["items"]:
+        if x["event_at"] < cutoff and x["status"] not in ("watching", "open"):
+            continue
+        x = dict(x)
+        tk = _ticks.get(x["symbol"])
+        if tk and tk["bars"] and time.time() - tk["at"] < 3 * LIVE_PRICE_S:
+            price = tk["bars"][-1]["close"]
+            x["price_now"] = price
+            if x["status"] == "open":
+                x["result"] = (x["entry"] - price) / x["entry"] - blowoff.FEE
+            elif x["status"] == "watching":
+                x["off_top"] = price / x["top"] - 1
+        x["tags"] = meta.get(x["symbol"], {}).get("tags", [])
+        items.append({k: clean(v) if isinstance(v, float) else v for k, v in x.items()})
+    items.sort(key=lambda x: -(x["entry_at"] or x["event_at"]))
+    return jsonify({"ready": True, "now": time.time(), "items": items, "phase": data["phase"],
+                    "record": data["record"], "rule": data["rule"], "built": data["built"]})
+
+
+# --------------------------------------------------------------------------- #
+# Big-move radar (4h model)
+# --------------------------------------------------------------------------- #
+def refresh_radar():
+    if _rd["running"]:
+        return
+    _rd.update(running=True, bar=int(time.time() // 14400), message="Updating 4h candles…")
+    try:
+        syms = set(scanner.tracked_symbols())
+        radar.update_store(sorted(syms | {"BTCUSDT"}))
+        _rd["message"] = "Scoring coins…"
+        data = radar.scan(syms)
+        if data is None:
+            _rd["message"] = "No model yet — run: python radar.py --train"
+            return
+        ids = {p["id"] for p in data["picks"]}
+        if _rd["seen"] is not None:
+            new = [p for p in data["picks"] if p["id"] not in _rd["seen"] and p["time"] >= time.time() - 5 * 3600]
+            meta = exchange.symbols()
+            batch = [{**p, "tags": meta.get(p["symbol"], {}).get("tags", [])} for p in new]
+            if batch and notify.wants_radar():
+                notify.send(notify.format_radar(batch, data["record"]))
+        _rd.update(data=data, seen=ids, message=None)
+    except Exception as e:
+        _rd["message"] = f"Radar failed: {e}"
+        print(f"radar: {e}")
+    finally:
+        _rd["running"] = False
+
+
+@app.get("/api/radar")
+def api_radar():
+    data = _rd["data"]
+    if not data:
+        return jsonify({"ready": False, "message": _rd["message"], "running": _rd["running"]})
+    days = min(float(request.args.get("days", 7)), 365)
+    cutoff = time.time() - days * 86400
+    meta = exchange.symbols()
+    picks = []
+    for p in data["picks"]:
+        if p["time"] < cutoff:
+            continue
+        x = dict(p)
+        x.update({k: clean(v) for k, v in live_adjust(dict(p), p).items()})
+        x["tags"] = meta.get(p["symbol"], {}).get("tags", [])
+        picks.append(x)
+    picks.sort(key=lambda x: (-x["time"], -x["score"]))
+    return jsonify({"ready": True, "now": time.time(), "picks": picks, "record": data["record"], "report": data["report"],
+                    "built": data["built"], "running": _rd["running"], "message": _rd["message"]})
+
+
+# --------------------------------------------------------------------------- #
+# Why is it moving? (news, Bybit announcements, CoinGecko trending)
+# --------------------------------------------------------------------------- #
+@app.get("/api/why/<symbol>")
+def api_why(symbol):
+    symbol = symbol.upper()
+    if symbol not in exchange.symbols():
+        abort(404)
+    return jsonify(news.why(symbol))
+
+
+@app.get("/api/carry")
+def api_carry():
+    s = carry.data()
+    return jsonify({"data": s["data"], "running": s["running"], "error": s["error"]})
+
+
+@app.get("/api/listings")
+def api_listings():
+    """{symbol: Bybit launch time} — used to tag coins listed in the last 30 days."""
+    return jsonify({s: m.get("listed") for s, m in exchange.symbols().items() if m.get("listed")})
+
+
+@app.get("/api/trending")
+def api_trending():
+    return jsonify({"coins": news.trending(), "at": time.time()})
 
 
 @app.get("/api/prepump")

@@ -9,6 +9,9 @@ Background data collection (runs inside app.py, or on its own: python collector.
    Busy pools can trade more than the 300 trades the API returns between polls,
    so very active pools have gaps.
 
+3. CoinGecko's trending list (the coins people search for most) every 15 minutes
+   → data/social/trending_YYYY-MM.csv   (see news.py)
+
 2. Bybit futures sentiment every 15 minutes for every tracked coin: open interest,
    funding rate and the long/short account ratio, building our own history beyond
    the ~30 days Bybit keeps.
@@ -31,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 import exchange
+import news
 import scanner
 
 GT = "https://api.geckoterminal.com/api/v2"
@@ -45,7 +49,8 @@ MAX_POOL_AGE_DAYS = 30        # memecoin pumps happen in young pools
 MIN_TRADE_USD = 20            # smaller trades are mostly bots and dust
 
 status = {"solana": {"pools": 0, "trades_today": 0, "last": None, "error": None},
-          "sentiment": {"coins": 0, "last": None, "error": None}, "running": False}
+          "sentiment": {"coins": 0, "last": None, "error": None},
+          "trending": {"coins": 0, "last": None, "error": None}, "running": False}
 _session = requests.Session()
 _session.headers["accept"] = "application/json"
 _gt_lock = threading.Lock()
@@ -232,6 +237,16 @@ def sentiment_loop(stop):
         stop.wait(max(5, nxt - time.time()))
 
 
+def trending_loop(stop):
+    while not stop.is_set():
+        try:
+            n = news.save_trending()
+            status["trending"].update(coins=n, last=int(time.time()), error=None if n else "no data")
+        except Exception as e:
+            status["trending"]["error"] = f"{time.strftime('%H:%M')}: {e}"
+        stop.wait(900)
+
+
 _stop = threading.Event()
 
 
@@ -241,6 +256,7 @@ def start():
     status["running"] = True
     threading.Thread(target=solana_loop, args=(_stop,), daemon=True).start()
     threading.Thread(target=sentiment_loop, args=(_stop,), daemon=True).start()
+    threading.Thread(target=trending_loop, args=(_stop,), daemon=True).start()
 
 
 if __name__ == "__main__":

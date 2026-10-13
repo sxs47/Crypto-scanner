@@ -346,7 +346,19 @@ tbody tr.sel { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--a
 .setup-b.ignition { background: color-mix(in srgb, var(--peak) 16%, transparent); }
 .squeeze-b { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 17px;
   color: var(--good-text); border: 1px solid color-mix(in srgb, var(--good-text) 45%, transparent); font-weight: 600; }
+.volatile-b { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 17px;
+  color: #c98500; border: 1px solid color-mix(in srgb, #c98500 50%, transparent); font-weight: 600; }
 .pp-card { margin-bottom: 16px; }
+.new-coin-b { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 17px;
+  color: #c98500; border: 1px solid color-mix(in srgb, #c98500 50%, transparent); }
+.trend-b { margin-left: 5px; font-size: 12px; cursor: help; }
+.why { margin: 4px 16px 14px; }
+.why-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.why-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.why-list li { font-size: 13px; line-height: 1.4; }
+.why-list a { color: var(--text); text-decoration: none; }
+.why-list a:hover { text-decoration: underline; }
+.why-list small { color: var(--muted); }
 .pp-card .card-h { flex-wrap: wrap; gap: 8px 12px; }
 .pp-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-left: auto; }
 .pp-note { margin: 0 16px 10px; font-size: 13px; color: var(--muted); line-height: 1.5; }
@@ -448,7 +460,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       Pump Scanner
     </div>
     <nav class="seg nav" id="nav" aria-label="View">
-      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button>
+      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button><button data-view="radar">Radar</button><button data-view="carry">Carry</button>
     </nav>
     <div class="meta" id="meta">Loading…</div>
     <div class="spacer"></div>
@@ -568,6 +580,10 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
           <div id="macd"></div>
         </div>
         <div class="stats" id="dStats"></div>
+        <div class="why" id="dWhy">
+          <div class="why-h"><button class="btn" id="dWhyBtn">Why is it moving?</button><span class="meta" id="dWhyNote">latest news, Bybit announcements and CoinGecko trending for this coin</span></div>
+          <div id="dWhyBody"></div>
+        </div>
         <div class="fut" id="dFut" hidden>
           <div class="fut-h"><b>Futures context</b><span class="sub" id="dFutSub"></span></div>
           <div class="stats" id="dFutStats"></div>
@@ -670,6 +686,12 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       <div class="field">Pre-pump watch
         <div class="seg" id="tgPrepump"><button data-v="off">Off</button><button data-v="squeeze">Squeeze setups</button><button data-v="all">All flags</button></div>
       </div>
+      <div class="field">Radar picks
+        <div class="seg" id="tgRadar"><button data-v="off">Off</button><button data-v="all">On</button></div>
+      </div>
+      <div class="field">Blow-off shorts
+        <div class="seg" id="tgBlowoff"><button data-v="off">Off</button><button data-v="weak">Weak market only</button><button data-v="all">All</button></div>
+      </div>
       <button class="btn" id="tgTest">Send test</button>
     </div>
   </div>
@@ -688,6 +710,23 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       <table>
         <thead id="ppHead"></thead>
         <tbody id="ppBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card pp-card" id="boCard">
+    <div class="card-h"><h2>Blow-off watch · short (paper)</h2><span class="sub" id="boSub">coins that exploded on huge volume, tracked as paper shorts</span>
+      <div class="pp-tools">
+        <div class="field">Period
+          <div class="seg" id="boDays"><button data-v="7">7 days</button><button data-v="30">30 days</button><button data-v="120">All</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="pp-note" id="boNote"></p>
+    <div class="table-scroll pp-scroll">
+      <table>
+        <thead id="boHead"></thead>
+        <tbody id="boBody"></tbody>
       </table>
     </div>
   </section>
@@ -822,6 +861,70 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
   </section>
  </div>
 
+ <div id="viewRadar" hidden>
+  <div class="warn info" role="note">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <div id="rdWarnText"></div>
+  </div>
+  <div class="sig-toolbar">
+    <div class="field">Period
+      <div class="seg" id="rdDays"><button data-v="1">24h</button><button data-v="7">7 days</button><button data-v="30">30 days</button><button data-v="365">All</button></div>
+    </div>
+    <span class="meta" id="rdStatus"></span>
+  </div>
+  <section class="kpis" id="rdKpis"></section>
+  <section class="main">
+    <div class="card">
+      <div class="card-h"><h2>Radar picks</h2><span class="sub" id="rdSub"></span></div>
+      <div class="table-scroll sig-scroll">
+        <table>
+          <thead id="rdHead"></thead>
+          <tbody id="rdBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="rdDetailSlot"></div>
+  </section>
+ </div>
+
+ <div id="viewCarry" hidden>
+  <div class="warn info" role="note">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <div id="cyWarnText"></div>
+  </div>
+  <div class="sig-toolbar">
+    <div class="field">24h volume ≥
+      <div class="seg" id="cyMinVol"><button data-v="5000000">$5M</button><button data-v="20000000">$20M</button><button data-v="100000000">$100M</button></div>
+    </div>
+    <label class="toggle field"><input type="checkbox" id="cySpot" checked> Only coins with Bybit spot</label>
+    <span class="meta" id="cyStatus"></span>
+  </div>
+  <section class="kpis" id="cyKpis"></section>
+  <section class="main">
+    <div class="card">
+      <div class="card-h"><h2>Funding by coin</h2><span class="sub" id="cySub"></span></div>
+      <div class="table-scroll sig-scroll">
+        <table>
+          <thead id="cyHead"></thead>
+          <tbody id="cyBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Carry calculator</h2><span class="sub" id="cyCalcCoin"></span></div>
+      <div class="tg-row" style="padding: 0 16px 8px">
+        <label class="field">Capital (USDT) <input class="search" id="cyCapital" type="number" min="0" step="100" value="1000" style="width: 110px"></label>
+        <div class="field">Short leverage
+          <div class="seg" id="cyLev"><button data-v="1">1×</button><button data-v="2">2×</button><button data-v="3">3×</button></div>
+        </div>
+      </div>
+      <div class="stats" id="cyCalcOut"></div>
+      <p class="pp-note">Last 4 weeks of the rotation (picked from the week before, funding earned before switching costs):</p>
+      <ul class="why-list" id="cyWeeks" style="margin: 0 16px 16px"></ul>
+    </div>
+  </section>
+ </div>
+
  <div id="viewJournal" hidden>
   <div class="sig-toolbar">
     <label class="btn primary" for="jrFile">Import Bybit CSV</label>
@@ -952,9 +1055,58 @@ function fmtDate(t, withTime = true) {
 }
 const base = (sym) => sym.replace(/USDT$/, "");
 const tradeUrl = (sym) => `https://www.bybit.com/trade/usdt/${encodeURIComponent(sym)}`;  // Bybit USDT perpetual
+let trendingMap = {};
+let listedMap = {};
 function symNode(sym) {
-  return el("span", { class: "sym" }, base(sym), el("span", { class: "q", text: "/USDT" }));
+  const n = el("span", { class: "sym" }, base(sym), el("span", { class: "q", text: "/USDT" }));
+  const t = trendingMap[base(sym).replace(/^\d+/, "")];
+  if (t) n.append(el("span", { class: "trend-b", text: "🔥", title: `#${t.rank} trending on CoinGecko right now (most searched coins)` }));
+  const listed = listedMap[sym];
+  const age = listed ? (Date.now() / 1000 - listed) / 86400 : null;
+  if (age != null && age >= 0 && age < 30) n.append(el("span", { class: "new-coin-b", text: `new ${Math.max(1, Math.round(age))}d`,
+    title: `Listed on Bybit ${Math.max(1, Math.round(age))} days ago. Research: after their first day, new Bybit listings had a median of −23% over 30 days and −33% over 90 days; 7 in 10 did worse than BTC. 1 in 5 still doubled first.` }));
+  return n;
 }
+async function loadListings() {
+  try { listedMap = await (await fetch("/api/listings")).json(); } catch {}
+}
+loadListings();
+setInterval(loadListings, 60 * 60 * 1000);
+async function loadTrending() {
+  try {
+    const d = await (await fetch("/api/trending")).json();
+    trendingMap = Object.fromEntries((d.coins || []).map((c) => [c.symbol, c]));
+  } catch {}
+}
+loadTrending();
+setInterval(loadTrending, 5 * 60 * 1000);
+
+// ---------- "Why is it moving?" for the coin in the detail panel
+let whySym = null;
+function resetWhy(sym) {
+  if (sym === whySym) return;
+  whySym = sym;
+  $("dWhyBody").replaceChildren();
+  $("dWhyBtn").disabled = false;
+  $("dWhyNote").textContent = "latest news, Bybit announcements and CoinGecko trending for this coin";
+}
+$("dWhyBtn").addEventListener("click", async () => {
+  const sym = whySym;
+  if (!sym) return;
+  $("dWhyBtn").disabled = true;
+  $("dWhyNote").textContent = "Looking…";
+  let d;
+  try { d = await (await fetch(`/api/why/${sym}`)).json(); } catch { d = { error: "could not load" }; }
+  if (sym !== whySym) return;
+  $("dWhyBtn").disabled = false;
+  const ago = (t) => (t ? `${fmtHours((Date.now() / 1000 - t) / 3600)} ago` : "");
+  const items = [];
+  if (d.trending) items.push(el("li", {}, `🔥 #${d.trending.rank} trending on CoinGecko right now`));
+  for (const a of d.bybit || []) items.push(el("li", {}, "📣 ", el("a", { href: a.url, target: "_blank", rel: "noopener", text: a.title }), el("small", { text: ` · Bybit ${a.type || "announcement"} · ${fmtDate(a.time)}` })));
+  for (const h of d.headlines || []) items.push(el("li", {}, "📰 ", el("a", { href: h.url, target: "_blank", rel: "noopener", text: h.title }), el("small", { text: ` · ${h.source} · ${ago(h.time)}` })));
+  $("dWhyNote").textContent = d.error ? d.error : items.length ? `${d.name || base(sym)} · last 3 days` : `No news, announcements or trending for ${d.name || base(sym)} in the last 3 days — the move may be trading-driven (whales, liquidations).`;
+  $("dWhyBody").replaceChildren(items.length ? el("ul", { class: "why-list" }, ...items) : "");
+});
 const isWick = (e) => e.close_gain == null || e.close_gain < state.threshold * 100;
 
 // ------------------------------------------------------------------ data
@@ -1391,6 +1543,7 @@ function precisionFor(p) {
 let currentSymbol = null;
 async function drawSymbol(symbol, interval = "15m") {
   ensureChart();
+  resetWhy(symbol);
   const data = await getCandles(symbol, interval);
   const key = `${symbol}|${interval}`;
   if (currentSymbol !== key) {
@@ -1993,7 +2146,7 @@ $("trainBtn").addEventListener("click", async () => {
 function setView(v) {
   const navKey = v;
   state.view = v;
-  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal");
+  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal", "view-radar", "view-carry");
   document.body.classList.add(`view-${v}`);
   $("viewPumps").hidden = v !== "pumps";
   $("viewSignals").hidden = v !== "signals";
@@ -2001,9 +2154,11 @@ function setView(v) {
   $("viewTrend").hidden = v !== "trend";
   $("viewPlanner").hidden = v !== "planner";
   $("viewJournal").hidden = v !== "journal";
+  $("viewRadar").hidden = v !== "radar";
+  $("viewCarry").hidden = v !== "carry";
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === navKey)));
   // One chart instance, moved between the views
-  const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot") }[v];
+  const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot"), radar: $("rdDetailSlot") }[v];
   if (slot) slot.append($("detail"));
   $("dFocus").textContent = v === "alerts" ? "Zoom to alert" : "Zoom to event";
   if (history.replaceState) history.replaceState(null, "", navKey === "pumps" ? "#" : `#${navKey}`);
@@ -2021,11 +2176,15 @@ function setView(v) {
       renderTrend();
       if (tr.sel) showTrendCoin(tr.sel, false); else if (tr.rows.length) showTrendCoin(tr.rows[0]);
     }
+  } else if (v === "radar") {
+    loadRadar();
+  } else if (v === "carry") {
+    loadCarry();
   } else if (v === "alerts") {
     al.unseen = 0;
     updateBadge();
     renderAlerts();
-    if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); else if (al.rows.length) showAlert(al.rows[0]);
+    if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); else if (al.rows.length) showAlert(al.rows[0]);
   } else {
     renderCharts(state.rows, Math.round(state.threshold * 100));
     if (state.selected) selectEvent(state.selected, false);
@@ -2038,8 +2197,10 @@ $("nav").addEventListener("click", (e) => { const b = e.target.closest("button")
 function refreshDetail() {
   if (state.view === "journal") { if (jr.trades.length) renderJournal(); return; }
   if (state.view === "planner") { computePlan(); return; }
+  if (state.view === "radar") { if (rd.sel) showRadar(rd.sel, false); return; }
+  if (state.view === "carry") return;
   if (state.view === "trend") { if (tr.report) renderTrend(); if (tr.sel) showTrendCoin(tr.sel, false); }
-  else if (state.view === "alerts") { if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); }
+  else if (state.view === "alerts") { if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); }
   else if (state.view === "signals") { if (sig.sel) showSignalCoin(sig.sel, false); }
   else if (state.selected) selectEvent(state.selected, false);
   else if (state.coin) showCoin(state.coin);
@@ -2087,7 +2248,7 @@ async function loadAlerts() {
   renderLive();
   if (state.view === "alerts") {
     renderAlerts();
-    if (!al.sel && !pp.sel && al.rows.length) showAlert(al.rows[0]);
+    if (!al.sel && !pp.sel && !bo.sel && al.rows.length) showAlert(al.rows[0]);
   }
 }
 
@@ -2295,6 +2456,7 @@ function zoomToAlert(a) {
 async function showAlert(a, scroll = true, quiet = false) {
   al.sel = a;
   if (pp.sel) { pp.sel = null; renderPrepump(); }
+  if (bo.sel) { bo.sel = null; renderBlowoff(); }
   showDetail();
   $("dTitle").replaceChildren(base(a.symbol), el("span", { class: "q", text: "/USDT" }));
   $("dPill").textContent = `${SETUP_LABEL[a.setup]} · ${fmtDate(a.time + 900)} ${tzShort()}`;
@@ -2747,6 +2909,8 @@ function renderTg() {
   for (const id of ["tgTrend", "tgIgn"]) $(id).checked = tg.setups.includes($(id).dataset.setup);
   $("tgBtc").checked = tg.trend_changes;
   $("tgPrepump").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === (tg.prepump || "squeeze"))));
+  $("tgBlowoff").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === (tg.blowoff || "off"))));
+  $("tgRadar").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === (tg.radar || "off"))));
 }
 async function loadTg() {
   try { tg = await (await fetch("/api/telegram")).json(); } catch { tg = null; }
@@ -2769,6 +2933,8 @@ for (const id of ["tgTrend", "tgIgn"]) $(id).addEventListener("change", () =>
   saveTg({ setups: ["tgTrend", "tgIgn"].filter((x) => $(x).checked).map((x) => $(x).dataset.setup) }));
 $("tgBtc").addEventListener("change", (e) => saveTg({ trend_changes: e.target.checked }));
 $("tgPrepump").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ prepump: b.dataset.v }); });
+$("tgBlowoff").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ blowoff: b.dataset.v }); });
+$("tgRadar").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ radar: b.dataset.v }); });
 $("tgTest").addEventListener("click", async () => {
   $("tgTest").disabled = true;
   await saveTg({ test: true });
@@ -3315,7 +3481,8 @@ $("jrExport").addEventListener("click", () => {
 
 // ------------------------------------------------------------------ pre-pump watch
 const pp = { data: null, rows: [], sel: null, period: 72, squeezeOnly: false, sort: { key: "time", dir: -1 } };
-const isSqueeze = (f) => f.ls != null && pp.data && f.ls <= pp.data.rule.squeeze_ls;
+const isSqueeze = (f) => f.ls != null && !!(pp.data && pp.data.rule) && f.ls <= pp.data.rule.squeeze_ls;
+const isVolatile = (f) => f.vol_before != null && !!(pp.data && pp.data.rule) && f.vol_before >= pp.data.rule.volatile_x;
 const resultNode = (f) => {
   if (f.peak != null && f.peak >= 0.30) return el("span", { class: "check", text: "+30% ✓" });
   if (f.peak != null && f.peak >= 0.15) return el("span", { class: "pos", text: "+15% ✓" });
@@ -3331,11 +3498,14 @@ const PP_COLS = [
   { key: "symbol", label: "Coin", cell: (f) => {
       const n = symNode(f.symbol);
       if (isSqueeze(f)) n.append(el("span", { class: "squeeze-b", text: "squeeze setup", title: "More accounts short than long (ratio ≤ 1.3)" }));
+      if (isVolatile(f)) n.append(el("span", { class: "volatile-b", text: "⚡ volatile", title: "Volume was already 6×+ normal before the spike: big moves both ways — use a wider stop or a smaller position" }));
       if (f.tags && f.tags.length) n.append(el("span", { class: "risk-b", text: "new/risky", title: "Bybit lists this coin in its Innovation zone (new or higher-risk listings)" }));
       return n;
     } },
   { key: "vol_x", label: "Volume", cell: (f) => `${f.vol_x.toFixed(f.vol_x < 10 ? 1 : 0)}×` },
   { key: "rng_x", label: "Candles", cell: (f) => `${f.rng_x.toFixed(1)}×` },
+  { key: "vol_before", label: "Vol before", cell: (f) => (f.vol_before == null ? el("span", { class: "dim", text: "—", title: "needs 30 days of history" })
+      : el("span", { title: "24h volume ending 4h before the flag, × the coin's normal daily volume (30-day median)", text: `${f.vol_before.toFixed(1)}×` })) },
   { key: "ret4", label: "Last 4h", cell: (f) => changeNode(f.ret4) },
   { key: "ls", label: "Long/short", cell: (f) => (f.ls == null ? el("span", { class: "dim", text: "—", title: "no ratio recorded for this time" }) : f.ls.toFixed(2)) },
   { key: "turnover24", label: "24h vol", cell: (f) => fmtCompact(f.turnover24) },
@@ -3351,7 +3521,7 @@ async function loadPrepump() {
   pp.data = d;
   if (pp.sel) pp.sel = (d.flags || []).find((f) => f.id === pp.sel.id) || pp.sel;
   renderPrepump();
-  if (pp.sel && state.view === "alerts") showPrepump(pp.sel, false, true);
+  if (d.ready && pp.sel && state.view === "alerts") showPrepump(pp.sel, false, true);
   if (!d.ready) setTimeout(loadPrepump, 5000);
 }
 
@@ -3371,6 +3541,7 @@ function renderPrepump() {
       `any coin at any time: ${pctf(b && b.hit30, 1)} / ${pctf(b && b.hit15, 0)}. ` : "",
     sq.n ? el("b", { text: `Squeeze setups: ${pctf(sq.hit30, 1)} hit +30%, ${pctf(sq.hit15, 0)} hit +15% (${sq.n} flags)` }) : "",
     ot.n ? ` vs. ${pctf(ot.hit30, 1)} / ${pctf(ot.hit15, 0)} for the rest. ` : " ",
+    r.volatile && r.volatile.n ? `⚡ Volatile flags: ${pctf(r.volatile.hit30, 1)} hit +30% but ${pctf(r.volatile.drop15, 0)} dropped −15% (calm ones: ${pctf(r.calm.hit30, 1)} / ${pctf(r.calm.drop15, 0)}) — size them smaller. ` : "",
     all.n ? `Median 24h return after fees ${signed(all.median_24h)}: most flags go nowhere, so use it as a shortlist and wait for your own entry and stop. Not advice.` : "",
   );
   const col = PP_COLS.find((c) => c.key === pp.sort.key);
@@ -3412,6 +3583,7 @@ function renderPrepump() {
 async function showPrepump(f, scroll = true, quiet = false) {
   pp.sel = f;
   al.sel = null;
+  if (bo.sel) { bo.sel = null; renderBlowoff(); }
   markAlertSelected();
   if (!quiet) renderPrepump();
   showDetail();
@@ -3427,6 +3599,8 @@ async function showPrepump(f, scroll = true, quiet = false) {
     ["Volume, last 4h", `${f.vol_x.toFixed(1)}×`, "vs. its normal week"],
     ["Candle size, last 4h", `${f.rng_x.toFixed(1)}×`, "vs. its normal week"],
     ["Price, last 4h", signed(f.ret4), `24h ${signed(f.ret24)}`],
+    ["Volume before the spike", f.vol_before == null ? "—" : `${f.vol_before.toFixed(1)}×`,
+      f.vol_before == null ? "needs 30 days of history" : isVolatile(f) ? "⚡ already exploding · volatile" : f.vol_before >= 2.5 ? "step 1 · rising" : "calm before"],
     ["Long/short accounts", f.ls == null ? "—" : f.ls.toFixed(2), isSqueeze(f) ? "more shorts · squeeze setup" : f.ls == null ? "not recorded" : "more longs"],
   ];
   $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
@@ -3456,6 +3630,382 @@ $("ppPeriod").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pre
 $("ppSqueeze").addEventListener("change", (e) => { pp.squeezeOnly = e.target.checked; renderPrepump(); });
 setInterval(() => { if (state.view === "alerts") loadPrepump(); }, 15000);
 
+// ------------------------------------------------------------------ blow-off watch (short side, paper)
+const bo = { data: null, sel: null, days: 7 };
+const BO_STATUS = {
+  watching: (x) => el("span", { class: "dim", title: "Waiting for the price to fall 10% from its top (up to 72h after the blow-off)",
+    text: `watching${x.off_top != null ? ` · ${signed(x.off_top)} from top` : ""}` }),
+  open: (x) => el("b", { text: `SHORT @ ${fmtPrice(x.entry)}`, title: "Paper short is open: target −10%, stop +10%, max 48h" }),
+  target: () => el("span", { class: "check", text: "−10% target ✓" }),
+  stopped: () => el("span", { class: "negt", text: "stopped +10% ✗" }),
+  "time exit": () => el("span", { text: "closed after 48h" }),
+  "no pullback": () => el("span", { class: "dim", text: "no 10% pullback", title: "The price never fell 10% from its top within 72h, so no short" }),
+};
+const BO_COLS = [
+  { label: () => `Blow-off (${tzShort()})`, cell: (x) => {
+      const t = x.event_at, sameDay = tzDay(t) === tzDay(Date.now() / 1000);
+      return el("span", {}, sameDay ? fmtClock(t).slice(0, 5) : fmtDate(t));
+    } },
+  { label: "Coin", cell: (x) => {
+      const n = symNode(x.symbol);
+      if (x.tags && x.tags.length) n.append(el("span", { class: "risk-b", text: "new/risky" }));
+      return n;
+    } },
+  { label: "Ran 24h", cell: (x) => changeNode(x.run_24h) },
+  { label: "Volume", cell: (x) => `${x.vol_x.toFixed(0)}×` },
+  { label: "Status", cell: (x) => (BO_STATUS[x.status] || (() => x.status))(x) },
+  { label: "Short P&L", cell: (x) => (x.result == null ? el("span", { class: "dim", text: "—" }) : el("b", {}, changeNode(x.result))) },
+];
+
+async function loadBlowoff() {
+  let d;
+  try { d = await (await fetch(`/api/blowoff?days=${bo.days}`)).json(); } catch { return; }
+  bo.data = d;
+  if (bo.sel && d.items) bo.sel = d.items.find((x) => x.id === bo.sel.id) || bo.sel;
+  renderBlowoff();
+  if (!d.ready) setTimeout(loadBlowoff, 8000);
+  else if (bo.sel && state.view === "alerts") showBlowoff(bo.sel, true);
+}
+
+function renderBlowoff() {
+  const d = bo.data;
+  if (!d) return;
+  if (!d.ready) {
+    $("boNote").textContent = "Scanning stored candles for blow-offs… (about 20 seconds after the app starts)";
+    $("boBody").replaceChildren();
+    return;
+  }
+  const ph = d.phase, r = d.record;
+  const sum = (s) => (s && s.n ? `${s.n} trades, ${pctf(s.win, 0)} won, avg ${signed(s.avg, 2)} per trade` : "no trades yet");
+  $("boNote").replaceChildren(
+    ph ? el("b", { class: ph.weak ? "pos" : "negt", text: `Altcoin market: ${ph.weak ? "weak ✅" : "strong ⚠️"} ` }) : "",
+    ph ? `(altcoin index ${signed(ph.gap)} vs its 50-day average). ` : "",
+    ph && !ph.weak ? "Research: this short worked mainly in weak altcoin markets — in strong ones it lost. " : "",
+    el("b", { text: `Paper record${r.since ? ` since ${fmtDate(r.since).split(",")[0]}` : ""}: ` }),
+    `${sum(r.all)} · weak market: ${sum(r.weak)} · strong market: ${sum(r.strong)}. `,
+    `Rule: after a 20× volume run-up, short when the price is 10% off its top; target −10%, stop +10%, max 48h; fees in. Paper only — not advice.`,
+  );
+  const rows = d.items || [];
+  const open = rows.filter((x) => x.status === "open" || x.status === "watching").length;
+  $("boSub").textContent = `${rows.length} setup${rows.length === 1 ? "" : "s"} · ${open} active · checked every 4h candle · prices live (30s)`;
+  $("boHead").replaceChildren(el("tr", {}, ...BO_COLS.map((c) => el("th", { text: typeof c.label === "function" ? c.label() : c.label }))));
+  if (!rows.length) {
+    $("boBody").replaceChildren(el("tr", {}, el("td", { colspan: BO_COLS.length, class: "empty", text: "No blow-offs in this period." })));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const x of rows) {
+    const row = el("tr");
+    if (bo.sel && bo.sel.id === x.id) row.classList.add("sel");
+    for (const c of BO_COLS) row.append(el("td", {}, c.cell(x)));
+    row.addEventListener("click", () => showBlowoff(x));
+    frag.append(row);
+  }
+  $("boBody").replaceChildren(frag);
+}
+
+async function showBlowoff(x, quiet = false, scroll = true) {
+  bo.sel = x;
+  al.sel = null;
+  if (pp.sel) { pp.sel = null; renderPrepump(); }
+  markAlertSelected();
+  if (!quiet) renderBlowoff();
+  showDetail();
+  $("dTitle").replaceChildren(base(x.symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = `Blow-off short (paper) · ${fmtDate(x.event_at)} ${tzShort()}`;
+  $("dFocus").hidden = false;
+  $("dTrade").href = tradeUrl(x.symbol);
+  const stats = [
+    ["Blow-off", fmtPrice(x.event_price), `${fmtDate(x.event_at)} · ran ${signed(x.run_24h)} in 24h`],
+    ["Volume", `${x.vol_x.toFixed(0)}× normal`, `24h ${fmtCompact(x.turnover24)}`],
+    ["Top since blow-off", fmtPrice(x.top), x.price_now ? `now ${fmtPrice(x.price_now)}` : ""],
+    ["Short entry", x.entry ? fmtPrice(x.entry) : "—", x.entry_at ? fmtDate(x.entry_at) : "waits for −10% from the top"],
+    ["Target / stop", x.entry ? `${fmtPrice(x.entry * 0.9)} / ${fmtPrice(x.entry * 1.1)}` : "—", "−10% / +10%, max 48h"],
+    ["Short P&L", x.result == null ? "—" : signed(x.result, 2), x.status === "open" ? "open · live" : x.status],
+    ["Market at blow-off", x.weak_market == null ? "—" : x.weak_market ? "weak ✅" : "strong ⚠️", "altcoin index vs its 50-day average"],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  if (quiet) return;
+  if (scroll) $("detail").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  loadFutures(x.symbol);
+  await drawSymbol(x.symbol);
+  if (bo.sel !== x) return;
+  const m = [{ time: x.event_at - 900, position: "aboveBar", shape: "circle", color: css("--muted"), text: "blow-off" }];
+  if (x.entry_at) m.push({ time: x.entry_at - 900, position: "aboveBar", shape: "arrowDown", color: css("--accent"), text: "short" });
+  if (x.exit_at) m.push({ time: x.exit_at - 900, position: "belowBar", shape: "circle", color: x.result > 0 ? css("--up") : css("--down"), text: x.result > 0 ? "✓" : "✗" });
+  candleSeries.setMarkers(m.sort((p, q) => p.time - q.time));
+  for (const pl of priceLines) candleSeries.removePriceLine(pl);
+  priceLines = x.entry ? [
+    candleSeries.createPriceLine({ price: x.entry, color: css("--accent"), lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "short" }),
+    candleSeries.createPriceLine({ price: x.entry * 0.9, color: css("--up"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "target" }),
+    candleSeries.createPriceLine({ price: x.entry * 1.1, color: css("--down"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "stop" }),
+  ] : [];
+  const end = Math.min((x.exit_at || Date.now() / 1000) + 6 * 3600, Date.now() / 1000);
+  applyView(() => chart.timeScale().setVisibleRange({ from: x.event_at - 24 * 3600, to: end }));
+}
+
+$("boDays").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  bo.days = Number(b.dataset.v);
+  $("boDays").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  loadBlowoff();
+});
+$("boDays").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === bo.days)));
+setInterval(() => { if (state.view === "alerts") loadBlowoff(); }, 30000);
+
+// ------------------------------------------------------------------ big-move radar tab
+const rd = { data: null, sel: null, days: 7, timer: null };
+const rdResult = (p) => {
+  if (p.peak != null && p.peak >= 0.30) return el("span", { class: "check", text: "+30% ✓" });
+  if (p.trough != null && p.trough <= -0.15 && !(p.peak >= 0.15)) return el("span", { class: "negt", text: "−15% ✗" });
+  if (p.peak != null && p.peak >= 0.15) return el("span", { class: "pos", text: "+15% ✓" });
+  return el("span", { class: "dim", text: p.done ? "small move" : "…", title: p.done ? "24h passed without +15% or −15%" : "still inside its 24h window" });
+};
+const RD_COLS = [
+  { label: () => `Flagged (${tzShort()})`, cell: (p) => {
+      const t = p.time + 900, sameDay = tzDay(t) === tzDay(Date.now() / 1000);
+      const n = el("span", {}, sameDay ? fmtClock(t).slice(0, 5) : fmtDate(t));
+      if (Date.now() / 1000 - t < 4 * 3600) n.append(el("span", { class: "new-b", text: "NEW" }));
+      return n;
+    } },
+  { label: "Coin", cell: (p) => {
+      const n = symNode(p.symbol);
+      if (p.tags && p.tags.length) n.append(el("span", { class: "risk-b", text: "new/risky" }));
+      return n;
+    } },
+  { label: "Why", cell: (p) => el("span", { class: "dim", text: (p.reasons || []).join(" · ") || "—" }) },
+  { label: "Best", cell: (p) => changeNode(p.peak) },
+  { label: "Worst", cell: (p) => changeNode(p.trough) },
+  { label: "Now", cell: (p) => el("b", {}, changeNode(p.now)) },
+  { label: "Result (24h)", cell: rdResult },
+];
+
+async function loadRadar() {
+  let d;
+  try { d = await (await fetch(`/api/radar?days=${rd.days}`)).json(); } catch { return; }
+  rd.data = d;
+  if (rd.sel && d.picks) rd.sel = d.picks.find((p) => p.id === rd.sel.id) || rd.sel;
+  renderRadar();
+  clearTimeout(rd.timer);
+  if (!d.ready || d.running) rd.timer = setTimeout(loadRadar, 8000);
+  if (state.view === "radar") {
+    if (rd.sel) showRadar(rd.sel, true);
+    else if (d.picks && d.picks.length) showRadar(d.picks[0], false, false);
+  }
+}
+
+function renderRadar() {
+  const d = rd.data;
+  if (!d) return;
+  if (!d.ready) {
+    $("rdWarnText").textContent = d.message || "Loading…";
+    $("rdStatus").textContent = d.running ? "Working… the first run takes about 2 minutes" : "";
+    $("rdKpis").replaceChildren();
+    $("rdBody").replaceChildren();
+    return;
+  }
+  const t = d.report && d.report.test, r = d.record;
+  $("rdWarnText").replaceChildren(
+    el("strong", { text: "Big move likely — up OR down. Not a buy signal. " }),
+    "Every 4 hours a model scores each coin on what ~24,000 pump candles since 2023 had in common beforehand " +
+    "(pumped recently, rising volume, off its lows, just above EMA200…). It flags the top 0.5%. ",
+    t ? `Unseen test (${t.period}): ${pctf(t.hit30_picks, 0)} of picks touched +30% within 24h vs ${pctf(t.hit30_any, 1)} for any coin. ` : "",
+    r && r.n ? el("b", { text: `Live since the model's cut-off (${fmtDate(r.since).split(",")[0]}): ${pctf(r.hit30, 0)} touched +30%, ${pctf(r.hit15, 0)} +15% — but ${pctf(r.drop15, 0)} dropped −15%, average 24h after ${signed(r.avg_24h)}. ` }) : "",
+    "Trading every pick with a fixed target and stop lost money in testing. Use it as a watchlist with your own entry and a stop. Not advice.",
+  );
+  $("rdStatus").textContent = `Updated ${fmtClock(d.built).slice(0, 5)} ${tzShort()} · next check after the next 4h candle${d.running ? " · updating now…" : ""}`;
+  const picks = d.picks || [];
+  const fin = picks.filter((p) => p.done);
+  const share = (f) => (fin.length ? pctf(fin.filter(f).length / fin.length, 0) : "—");
+  const days = rd.days >= 365 ? "since cut-off" : rd.days === 1 ? "last 24h" : `last ${rd.days} days`;
+  $("rdKpis").replaceChildren(
+    kpi(`Picks, ${days}`, fmtInt(picks.length), `${fin.length} finished their 24h`, { hero: true }),
+    kpi("Touched +30%", share((p) => p.peak >= 0.30), "within 24h"),
+    kpi("Touched +15%", share((p) => p.peak >= 0.15), "within 24h"),
+    kpi("Dropped −15%", share((p) => p.trough <= -0.15), "within 24h"),
+    kpi("Median 24h later", fin.length ? signed(median(fin.map((p) => p.ret_24h))) : "—", "after fees"),
+  );
+  $("rdSub").textContent = `${picks.length} pick${picks.length === 1 ? "" : "s"} · prices live (30s) · click one for the chart`;
+  $("rdHead").replaceChildren(el("tr", {}, ...RD_COLS.map((c) => el("th", { text: typeof c.label === "function" ? c.label() : c.label }))));
+  if (!picks.length) {
+    $("rdBody").replaceChildren(el("tr", {}, el("td", { colspan: RD_COLS.length, class: "empty", text: "No picks in this period." })));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const p of picks) {
+    const row = el("tr");
+    if (rd.sel && rd.sel.id === p.id) row.classList.add("sel");
+    for (const c of RD_COLS) row.append(el("td", {}, c.cell(p)));
+    row.addEventListener("click", () => showRadar(p));
+    frag.append(row);
+  }
+  $("rdBody").replaceChildren(frag);
+}
+
+async function showRadar(p, quiet = false, scroll = true) {
+  rd.sel = p;
+  if (!quiet) renderRadar();
+  showDetail();
+  $("dTitle").replaceChildren(base(p.symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = `Radar · ${fmtDate(p.time + 900)} ${tzShort()}`;
+  $("dFocus").hidden = false;
+  $("dTrade").href = tradeUrl(p.symbol);
+  const stats = [
+    ["Price at flag", fmtPrice(p.price), "4h candle close"],
+    ["Strength", `${p.x_chance.toFixed(2)}×`, "score vs the flag cut-off"],
+    ["Why", (p.reasons || []).join(" · ") || "—", ""],
+    ["Best / worst", `${signed(p.peak)} / ${signed(p.trough)}`, "within 24h"],
+    ["Now", signed(p.now), p.done ? `24h result ${signed(p.ret_24h)}` : "still inside 24h"],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  if (quiet) return;
+  if (scroll) $("detail").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  loadFutures(p.symbol);
+  await drawSymbol(p.symbol);
+  if (rd.sel !== p) return;
+  const same = ((rd.data && rd.data.picks) || []).filter((x) => x.symbol === p.symbol);
+  candleSeries.setMarkers(same.map((x) => ({ time: x.time, position: "belowBar", shape: x.id === p.id ? "arrowUp" : "circle",
+    color: x.id === p.id ? css("--accent") : css("--muted"), text: x.id === p.id ? "radar" : "" })).sort((a, b) => a.time - b.time));
+  for (const pl of priceLines) candleSeries.removePriceLine(pl);
+  priceLines = [candleSeries.createPriceLine({ price: p.price, color: css("--accent"), lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: "flag" })];
+  zoomToAlert(p);
+}
+
+$("rdDays").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  rd.days = Number(b.dataset.v);
+  $("rdDays").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  loadRadar();
+});
+$("rdDays").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === rd.days)));
+setInterval(() => { if (state.view === "radar") loadRadar(); }, 30000);
+
+// ------------------------------------------------------------------ carry tab (spot long + perp short, collect funding)
+const cy = { data: null, minVol: 5e6, spotOnly: true, sel: null, capital: 1000, lev: 1, quote: null };
+const yr = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(1)}%`);
+const yrNode = (v) => el("span", { class: v == null ? "dim" : v >= 0 ? "pos" : "negt", text: yr(v) });
+
+async function loadCarry() {
+  let d;
+  try { d = await (await fetch("/api/carry")).json(); } catch { return; }
+  cy.data = d;
+  renderCarry();
+  if (!d.data) setTimeout(loadCarry, 5000);
+}
+
+function renderCarry() {
+  const d = cy.data;
+  if (!d) return;
+  if (!d.data) {
+    $("cyWarnText").textContent = d.error ? `Could not load funding: ${d.error}` : "Loading funding rates for every coin… (about 10 seconds)";
+    return;
+  }
+  const D = d.data;
+  const res = D.research;
+  $("cyWarnText").replaceChildren(
+    el("strong", { text: "Funding carry: buy the coin on Bybit spot and short the same amount on the perpetual. " }),
+    "Price moves cancel out; you collect the funding that perp shorts are paid every 1–8 hours (and pay it when funding is negative). ",
+    el("b", { text: `Research, BTC per year: ${Object.entries(res.btc).map(([y, v]) => `${y} ${yr(v)}`).join(", ")}. ` }),
+    `Weekly rotation into the 5 highest-funding coins (top-60 traded, with spot), after switching costs: ${Object.entries(res.rotation).map(([y, v]) => `${y} ${yr(v)}`).join(", ")} (*to mid-Oct). `,
+    "Risks: keep the short's leverage low so a spike can't liquidate it; funding can turn negative; everything sits on one exchange; each entry + exit costs ≈0.31%. Not advice.",
+  );
+  const btc = D.rows.find((r) => r.symbol === "BTCUSDT");
+  const pick = D.rows.find((r) => r.symbol === D.picks[0]);
+  const wk = D.weeks || [];
+  const wkSum = wk.reduce((a, w) => a + w.earned, 0);
+  $("cyKpis").replaceChildren(
+    kpi("BTC carry, 7-day avg", btc ? yr(btc.avg7_yearly) : "—", btc ? `per year · 30-day ${yr(btc.avg30_yearly)} · now ${yr(btc.now_yearly)}` : "", { hero: true }),
+    kpi("Top pick this week", pick ? base(pick.symbol) : "—", pick ? `${yr(pick.avg7_yearly)}/yr over the last 7 days` : "no coin with positive funding"),
+    kpi("Rotation, last 4 weeks", wk.length ? `${wkSum >= 0 ? "+" : "−"}${Math.abs(wkSum * 100).toFixed(2)}%` : "—", "funding earned before switching costs (~0.3% per coin changed)"),
+  );
+  $("cyStatus").textContent = `Updated ${fmtClock(D.built).slice(0, 5)} ${tzShort()} · refreshes every hour${d.running ? " · updating…" : ""}`;
+  $("cyWeeks").replaceChildren(...wk.map((w) => el("li", {}, el("b", { text: fmtDate(w.start).split(",")[0] }),
+    ` · ${w.picks.map((s) => base(s)).join(", ") || "none"} → `, yrNode(w.earned))));
+  // table
+  let rows = D.rows.filter((r) => r.turnover24 >= cy.minVol && (!cy.spotOnly || r.spot));
+  rows.sort((a, b) => (b.avg7_yearly ?? -9) - (a.avg7_yearly ?? -9));
+  $("cySub").textContent = `${rows.length} coins · ★ = this week's rotation picks · click a coin for the calculator`;
+  const cols = [
+    ["Coin", (r) => { const n = symNode(r.symbol); if (D.picks.includes(r.symbol)) n.prepend(el("span", { class: "check", text: "★ " })); return n; }],
+    ["Now (per year)", (r) => yrNode(r.now_yearly)],
+    ["7-day avg", (r) => el("b", {}, yrNode(r.avg7_yearly))],
+    ["30-day avg", (r) => yrNode(r.avg30_yearly)],
+    ["Negative payments", (r) => (r.neg_share_30d == null ? "—" : pctf(r.neg_share_30d, 0))],
+    ["Spot", (r) => (r.spot ? el("span", { class: "check", text: "✓" }) : el("span", { class: "dim", text: "no spot" }))],
+    ["24h vol", (r) => fmtCompact(r.turnover24)],
+  ];
+  $("cyHead").replaceChildren(el("tr", {}, ...cols.map(([l]) => el("th", { text: l }))));
+  const frag = document.createDocumentFragment();
+  for (const r of rows) {
+    const tr = el("tr");
+    if (cy.sel === r.symbol) tr.classList.add("sel");
+    for (const [, f] of cols) tr.append(el("td", {}, f(r)));
+    tr.addEventListener("click", () => { cy.sel = r.symbol; renderCarry(); loadCarryQuote(); });
+    frag.append(tr);
+  }
+  $("cyBody").replaceChildren(frag);
+  if (!cy.sel) { cy.sel = D.picks[0] || "BTCUSDT"; loadCarryQuote(); }
+  renderCarryCalc();
+}
+
+async function loadCarryQuote() {
+  const sym = cy.sel;
+  try { cy.quote = await (await fetch(`/api/quote/${sym}`)).json(); } catch { cy.quote = null; }
+  if (sym === cy.sel) renderCarryCalc();
+}
+
+function renderCarryCalc() {
+  const D = cy.data && cy.data.data;
+  if (!D) return;
+  const r = D.rows.find((x) => x.symbol === cy.sel);
+  if (!r) return;
+  const C = cy.capital, L = cy.lev;
+  const spot = C * L / (L + 1), margin = spot / L;                    // short notional = spot amount
+  const q = cy.quote && cy.quote.symbol === r.symbol ? cy.quote : null;
+  const tier = q && q.tiers ? q.tiers.find((t) => spot <= t.limit) || q.tiers[q.tiers.length - 1] : null;
+  const mmr = tier ? tier.mmr : 0.005;
+  const liqUp = 1 / L - mmr;                                           // isolated short: price rise until liquidation
+  const rate = r.avg7_yearly ?? 0;
+  const perYear = spot * rate, cost = spot * D.switch_cost;
+  const breakEven = rate > 0 ? cost / (perYear / 365) : null;
+  $("cyCalcCoin").replaceChildren(symNode(r.symbol));
+  const line = (label, value, sub) => el("div", { class: "stat" }, el("div", { class: "label", text: label }),
+    el("div", { class: "value" }, value, sub ? el("small", { text: ` · ${sub}` }) : null));
+  $("cyCalcOut").replaceChildren(
+    line("Buy on spot", `$${fmtInt(Math.round(spot))}`, r.spot ? `${base(r.symbol)}/USDT spot` : "⚠ no Bybit spot market for this coin"),
+    line("Short on the perpetual", `$${fmtInt(Math.round(spot))}`, `margin $${fmtInt(Math.round(margin))} at ${L}× (isolated)`),
+    line("Liquidation of the short", `price +${(liqUp * 100).toFixed(0)}%`, `≈ ${q ? fmtPrice(q.price * (1 + liqUp)) : "…"} · watch it if price runs`),
+    line("Expected funding", `$${(perYear / 365).toFixed(2)}/day`, `$${fmtInt(Math.round(perYear))}/yr at the 7-day average ${yr(rate)}`),
+    line("Fees in + out", `$${cost.toFixed(2)}`, breakEven ? `earned back in ~${Math.ceil(breakEven)} days` : "funding is not positive — no carry now"),
+  );
+}
+
+$("cyMinVol").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  cy.minVol = Number(b.dataset.v);
+  $("cyMinVol").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  renderCarry();
+});
+$("cyMinVol").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === cy.minVol)));
+$("cySpot").addEventListener("change", (e) => { cy.spotOnly = e.target.checked; renderCarry(); });
+$("cyCapital").addEventListener("input", (e) => { cy.capital = Math.max(0, Number(e.target.value) || 0); renderCarryCalc(); });
+$("cyLev").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  cy.lev = Number(b.dataset.v);
+  $("cyLev").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  renderCarryCalc();
+});
+$("cyLev").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === cy.lev)));
+setInterval(() => { if (state.view === "carry") loadCarry(); }, 5 * 60 * 1000);
+
 // ------------------------------------------------------------------ background data collection status
 async function loadCollector() {
   let c;
@@ -3465,10 +4015,12 @@ async function loadCollector() {
   $("collectLine").textContent = !c.running ? "Background data collection is off."
     : `Collecting in the background · Solana memecoins: ${sol.pools || 0} pools, ${fmtInt(sol.trades_today || 0)} trades with wallets today (${ago(sol.last)})` +
       `${sol.error ? ` · last error ${sol.error}` : ""} · Bybit long/short, open interest & funding: ${sen.coins || 0} coins every 15 min (${ago(sen.last)})` +
-      `${sen.error ? ` · last error ${sen.error}` : ""}`;
+      `${sen.error ? ` · last error ${sen.error}` : ""}` +
+      (c.trending ? ` · CoinGecko trending: every 15 min (${ago(c.trending.last)})` : "");
 }
 setInterval(() => { if (state.view === "alerts") loadCollector(); }, 30000);
 loadPrepump();
+loadBlowoff();
 loadCollector();
 
 // ------------------------------------------------------------------ time zone switch
@@ -3503,7 +4055,7 @@ setInterval(renderClock, 1000);
 
 // ------------------------------------------------------------------ boot
 (async () => {
-  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal" }[location.hash] || "pumps";
+  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal", "#radar": "radar", "#carry": "carry" }[location.hash] || "pumps";
   state.view = startView;
   document.body.classList.add(`view-${state.view}`);
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === startView)));

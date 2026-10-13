@@ -27,6 +27,8 @@ DEFAULTS = {
     "setups": ["trend"],                # "trend", "ignition"
     "trend_changes": True,              # BTC daily trend turning on/off
     "prepump": "squeeze",               # pre-pump watch: "off", "squeeze" (low long/short ratio only), "all"
+    "blowoff": "off",                   # blow-off short setups: "off", "weak" (weak altcoin market only), "all"
+    "radar": "off",                     # big-move radar picks: "off", "all"
 }
 
 _q = queue.Queue()
@@ -85,6 +87,8 @@ def format_prepump(flags):
         squeeze = f.get("ls") is not None and f["ls"] <= prepump.SQUEEZE_LS
         ls = "L/S —" if f.get("ls") is None else f"L/S {f['ls']:.2f}" + (" 🔥 squeeze setup" if squeeze else "")
         tag = " · ⚠️ risk" if f.get("tags") else ""
+        if (f.get("vol_before") or 0) >= prepump.VOLATILE_X:
+            tag += f" · ⚡ volatile (volume already {f['vol_before']:.0f}× before)"
         lines.append(f"<b>{_h(base)}</b>/USDT · vol {f['vol_x']:.0f}× · candles {f['rng_x']:.1f}× · "
                      f"4h {f['ret4'] * 100:+.1f}% · {ls} · price {f['price']:.6g}{tag} · "
                      f"<a href=\"{exchange.trade_url(f['symbol'])}\">chart</a>")
@@ -92,6 +96,47 @@ def format_prepump(flags):
         lines.append(f"…and {len(flags) - 10} more on the dashboard")
     lines.append("<i>A watchlist, not a buy signal: last month ~5% of flags (8% of squeeze setups) "
                  "touched +30% within 24h; most did not. Not advice.</i>")
+    return "\n".join(lines)
+
+
+def wants_radar():
+    cfg = config()
+    return bool(cfg and cfg["enabled"] and cfg.get("radar") == "all")
+
+
+def format_radar(picks, record):
+    lines = ["📡 <b>Radar: big move likely</b>" + (f" · {len(picks)}" if len(picks) > 1 else "")]
+    for p in picks[:10]:
+        base = p["symbol"].removesuffix("USDT")
+        why = ", ".join(p.get("reasons") or [])
+        tag = " · ⚠️ risk" if p.get("tags") else ""
+        lines.append(f"<b>{_h(base)}</b>/USDT · price {p['price']:.6g} · {_h(why)}{tag} · "
+                     f"<a href=\"{exchange.trade_url(p['symbol'])}\">chart</a>")
+    if record and record.get("n"):
+        lines.append(f"<i>Since the model's cut-off: {record['hit30'] * 100:.0f}% of picks touched +30% within 24h, "
+                     f"but {record['drop15'] * 100:.0f}% dropped −15%. Up OR down — not a buy signal.</i>")
+    return "\n".join(lines)
+
+
+def wants_blowoff(item):
+    cfg = config()
+    if not cfg or not cfg["enabled"] or cfg["blowoff"] == "off":
+        return False
+    return cfg["blowoff"] == "all" or item.get("weak_market") is True
+
+
+def format_blowoff(items, phase):
+    market = "" if not phase else (" · altcoin market: weak ✅" if phase["weak"] else " · altcoin market: strong ⚠️")
+    lines = [f"📉 <b>Blow-off short setup</b> (paper){market}" + (f" · {len(items)}" if len(items) > 1 else "")]
+    for x in items[:10]:
+        base = x["symbol"].removesuffix("USDT")
+        tag = " · ⚠️ risk" if x.get("tags") else ""
+        e = x["entry"]
+        lines.append(f"<b>{_h(base)}</b>/USDT · ran {x['run_24h'] * 100:+.0f}% on {x['vol_x']:.0f}× volume, now 10% off the top · "
+                     f"short {e:.6g} → target {e * 0.9:.6g} · stop {e * 1.1:.6g} · max 48h{tag} · "
+                     f"<a href=\"{exchange.trade_url(x['symbol'])}\">chart</a>")
+    lines.append("<i>Paper-tracked research setup: about +1%/trade in weak altcoin markets since 2023, "
+                 "but it lost through all of 2024. Not advice.</i>")
     return "\n".join(lines)
 
 

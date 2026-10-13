@@ -15,10 +15,14 @@ edge in the data (mainly smaller drawdowns).
 |---|---|
 | **Pumps** | Every +30%-in-24h move over the last ~90 days, with charts |
 | **Signals** | Model-scored volatility watchlist and its out-of-sample backtest |
-| **Alerts** | **Pre-pump watch** (volume and candle size jumped 8×/3× while price is flat; "squeeze setup" when most accounts are short) with its 30-day track record; live 15m setups (Trend / Ignition), 1-hour follow-through check, EMA/MACD charts, futures context (open interest, funding, long/short), notifications |
+| **Alerts** | **Blow-off watch** (paper shorts after 20× volume run-ups, with an altcoin-market switch and live track record); **Pre-pump watch** (volume and candle size jumped 8×/3× while price is flat; "squeeze setup" when most accounts are short) with its 30-day track record; live 15m setups (Trend / Ignition), 1-hour follow-through check, EMA/MACD charts, futures context (open interest, funding, long/short), notifications |
 | **Trend** | Daily EMA20/50 trend rule with volatility-target position sizes: today's status per coin and a backtest since 2020 |
 | **Planner** | Risk-based position sizing for Bybit futures: size, leverage, liquidation price, fees, funding, plus a risk-of-ruin simulation |
 | **Journal** | Your closed trades (Bybit "Closed P&L" CSV import or manual entry) with win rate, expectancy and P&L by coin / hour / weekday / side; stored in `data/journal.json`, not in git |
+| **Radar** | A model (radar.py, trained on ~24,000 pump candles since 2023) flags the top 0.5% of coins most likely to make a big move in the next 24h, every 4h, with the reasons and an honest live track record. Big move up OR down, not a buy signal. Retrain: `python radar.py --train` |
+| **Carry** | Funding carry (buy on spot + short the perpetual, collect funding): every liquid coin's funding now / 7-day / 30-day as % per year, the weekly top-5 rotation picks, last 4 weeks of the rotation, and a calculator (split, liquidation distance, expected funding, fees). carry.py |
+| *(everywhere)* | `new Nd` tag on coins listed on Bybit in the last 30 days (most new listings underperform BTC) |
+| *(every chart)* | **Why is it moving?** button: latest news headlines (Google News RSS), Bybit announcements and CoinGecko trending for the coin (news.py, no keys). 🔥 marks coins trending on CoinGecko; the collector saves the trending list every 15 min to `data/social/` |
 
 ## Run it
 
