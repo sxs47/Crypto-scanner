@@ -4016,7 +4016,9 @@ async function loadCollector() {
     : `Collecting in the background · Solana memecoins: ${sol.pools || 0} pools, ${fmtInt(sol.trades_today || 0)} trades with wallets today (${ago(sol.last)})` +
       `${sol.error ? ` · last error ${sol.error}` : ""} · Bybit long/short, open interest & funding: ${sen.coins || 0} coins every 15 min (${ago(sen.last)})` +
       `${sen.error ? ` · last error ${sen.error}` : ""}` +
-      (c.trending ? ` · CoinGecko trending: every 15 min (${ago(c.trending.last)})` : "");
+      (c.trending ? ` · CoinGecko trending: every 15 min (${ago(c.trending.last)})` : "") +
+      (c.liquidations ? ` · Liquidations: ${fmtInt(c.liquidations.today || 0)} today (${fmtCompact(c.liquidations.usd_today || 0)})` +
+        `${c.liquidations.error ? ` · last error ${c.liquidations.error}` : ""}` : "");
 }
 setInterval(() => { if (state.view === "alerts") loadCollector(); }, 30000);
 loadPrepump();

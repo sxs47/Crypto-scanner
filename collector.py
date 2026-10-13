@@ -9,6 +9,10 @@ Background data collection (runs inside app.py, or on its own: python collector.
    Busy pools can trade more than the 300 trades the API returns between polls,
    so very active pools have gaps.
 
+4. Every liquidation on Bybit USDT perpetuals, live from Bybit's public websocket (allLiquidation).
+   side = "long" means a long position was force-closed (a forced SELL), "short" = a forced BUY.
+   → data/liquidations/YYYY-MM-DD.csv.gz   (time_ms, symbol, side, size, price, usd)
+
 3. CoinGecko's trending list (the coins people search for most) every 15 minutes
    → data/social/trending_YYYY-MM.csv   (see news.py)
 
@@ -32,6 +36,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
+import websocket
 
 import exchange
 import news
@@ -50,7 +55,8 @@ MIN_TRADE_USD = 20            # smaller trades are mostly bots and dust
 
 status = {"solana": {"pools": 0, "trades_today": 0, "last": None, "error": None},
           "sentiment": {"coins": 0, "last": None, "error": None},
-          "trending": {"coins": 0, "last": None, "error": None}, "running": False}
+          "trending": {"coins": 0, "last": None, "error": None},
+          "liquidations": {"today": 0, "usd_today": 0.0, "coins": 0, "last": None, "error": None}, "running": False}
 _session = requests.Session()
 _session.headers["accept"] = "application/json"
 _gt_lock = threading.Lock()
@@ -247,6 +253,66 @@ def trending_loop(stop):
         stop.wait(900)
 
 
+LIQ_DIR = scanner.DATA_DIR / "liquidations"
+WS_URL = "wss://stream.bybit.com/v5/public/linear"
+
+
+def _flush_liqs(buf):
+    if not buf:
+        return
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    _append(LIQ_DIR / f"{day}.csv.gz", ["time_ms", "symbol", "side", "size", "price", "usd"], buf)
+
+
+def liquidation_loop(stop):
+    """Record every liquidation (public websocket). Reconnects on any error."""
+    backoff = 5
+    while not stop.is_set():
+        ws = None
+        try:
+            syms = sorted(exchange.symbols())
+            ws = websocket.create_connection(WS_URL, timeout=20)
+            for i in range(0, len(syms), 10):                     # Bybit takes up to 10 topics per request
+                ws.send(json.dumps({"op": "subscribe", "args": [f"allLiquidation.{s}" for s in syms[i:i + 10]]}))
+            status["liquidations"].update(coins=len(syms), error=None)
+            backoff = 5
+            buf, last_flush, last_ping, today = [], time.time(), time.time(), None
+            while not stop.is_set():
+                if time.time() - last_ping > 20:
+                    ws.send(json.dumps({"op": "ping"}))
+                    last_ping = time.time()
+                try:
+                    msg = json.loads(ws.recv())
+                except websocket.WebSocketTimeoutException:
+                    continue
+                day = time.strftime("%Y-%m-%d", time.gmtime())
+                if day != today:
+                    _flush_liqs(buf); buf = []
+                    today = day
+                    status["liquidations"].update(today=0, usd_today=0.0)
+                if str(msg.get("topic", "")).startswith("allLiquidation"):
+                    for d in msg.get("data", []):
+                        size, price = float(d["v"]), float(d["p"])
+                        side = "long" if d["S"] == "Buy" else "short"   # Bybit: "Buy" = a long position was liquidated
+                        buf.append([int(d["T"]), d["s"], side, size, price, round(size * price, 2)])
+                        status["liquidations"]["today"] += 1
+                        status["liquidations"]["usd_today"] += size * price
+                        status["liquidations"]["last"] = int(time.time())
+                if time.time() - last_flush > 60:
+                    _flush_liqs(buf); buf = []
+                    last_flush = time.time()
+            _flush_liqs(buf)
+        except Exception as e:
+            status["liquidations"]["error"] = f"{time.strftime('%H:%M')}: {e}"
+            stop.wait(backoff)
+            backoff = min(backoff * 2, 300)
+        finally:
+            try:
+                ws and ws.close()
+            except Exception:
+                pass
+
+
 _stop = threading.Event()
 
 
@@ -257,6 +323,7 @@ def start():
     threading.Thread(target=solana_loop, args=(_stop,), daemon=True).start()
     threading.Thread(target=sentiment_loop, args=(_stop,), daemon=True).start()
     threading.Thread(target=trending_loop, args=(_stop,), daemon=True).start()
+    threading.Thread(target=liquidation_loop, args=(_stop,), daemon=True).start()
 
 
 if __name__ == "__main__":
