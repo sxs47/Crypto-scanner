@@ -368,6 +368,12 @@ tbody tr.sel { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--a
 tr.fresh { animation: flash 2.4s ease-out 1; }
 @keyframes flash { from { background: var(--accent-wash); } to { background: transparent; } }
 .check { color: var(--good-text); font-weight: 600; }
+.as-pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-weight: 700; font-size: 12px; color: #fff; }
+.as-pill.buy { background: var(--up); }
+.as-pill.sell { background: var(--down); }
+.as-pill.blink { animation: asblink 1s steps(2, start) infinite; }
+@keyframes asblink { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .as-pill.blink { animation: none; outline: 2px dashed currentColor; } }
 .collect-line { margin: 8px 2px 0; font-size: 12.5px; }
 .tg-panel { margin-top: 10px; padding: 12px 16px; display: grid; gap: 10px; }
 .tg-row { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; }
@@ -460,7 +466,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       Pump Scanner
     </div>
     <nav class="seg nav" id="nav" aria-label="View">
-      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button><button data-view="radar">Radar</button><button data-view="carry">Carry</button>
+      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button><button data-view="radar">Radar</button><button data-view="carry">Carry</button><button data-view="atr">ATR</button>
     </nav>
     <div class="meta" id="meta">Loading…</div>
     <div class="spacer"></div>
@@ -949,6 +955,31 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       <p class="pp-note">Last 4 weeks of the rotation (picked from the week before, funding earned before switching costs):</p>
       <ul class="why-list" id="cyWeeks" style="margin: 0 16px 16px"></ul>
     </div>
+  </section>
+ </div>
+
+ <div id="viewAtr" hidden>
+  <div class="sig-toolbar">
+    <div class="field">Show
+      <div class="seg" id="asSide"><button data-v="all">Buy + Sell</button><button data-v="buy">Buy</button><button data-v="sell">Sell</button></div>
+    </div>
+    <div class="field">Period
+      <div class="seg" id="asDays"><button data-v="1">24h</button><button data-v="3">3 days</button><button data-v="7">7 days</button></div>
+    </div>
+    <span class="meta" id="asStatus"></span>
+  </div>
+  <section class="main">
+    <div class="card">
+      <div class="card-h"><h2>ATR_SM signals · 4h</h2><span class="sub" id="asSub"></span></div>
+      <p class="pp-note" id="asNote"></p>
+      <div class="table-scroll sig-scroll">
+        <table>
+          <thead id="asHead"></thead>
+          <tbody id="asBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="asDetailSlot"></div>
   </section>
  </div>
 
@@ -2173,7 +2204,7 @@ $("trainBtn").addEventListener("click", async () => {
 function setView(v) {
   const navKey = v;
   state.view = v;
-  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal", "view-radar", "view-carry");
+  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal", "view-radar", "view-carry", "view-atr");
   document.body.classList.add(`view-${v}`);
   $("viewPumps").hidden = v !== "pumps";
   $("viewSignals").hidden = v !== "signals";
@@ -2183,9 +2214,10 @@ function setView(v) {
   $("viewJournal").hidden = v !== "journal";
   $("viewRadar").hidden = v !== "radar";
   $("viewCarry").hidden = v !== "carry";
+  $("viewAtr").hidden = v !== "atr";
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === navKey)));
   // One chart instance, moved between the views
-  const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot"), radar: $("rdDetailSlot") }[v];
+  const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot"), radar: $("rdDetailSlot"), atr: $("asDetailSlot") }[v];
   if (slot) slot.append($("detail"));
   $("dFocus").textContent = v === "alerts" ? "Zoom to alert" : "Zoom to event";
   if (history.replaceState) history.replaceState(null, "", navKey === "pumps" ? "#" : `#${navKey}`);
@@ -2207,6 +2239,8 @@ function setView(v) {
     loadRadar();
   } else if (v === "carry") {
     loadCarry();
+  } else if (v === "atr") {
+    loadAs();
   } else if (v === "alerts") {
     al.unseen = 0;
     updateBadge();
@@ -2226,6 +2260,7 @@ function refreshDetail() {
   if (state.view === "planner") { computePlan(); return; }
   if (state.view === "radar") { if (rd.sel) showRadar(rd.sel, false); return; }
   if (state.view === "carry") return;
+  if (state.view === "atr") { if (ax.sel) showAs(ax.sel); return; }
   if (state.view === "trend") { if (tr.report) renderTrend(); if (tr.sel) showTrendCoin(tr.sel, false); }
   else if (state.view === "alerts") { if (at.sel) showAtr(at.sel); else if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); }
   else if (state.view === "signals") { if (sig.sel) showSignalCoin(sig.sel, false); }
@@ -4011,6 +4046,101 @@ async function showRun(p) {
   zoomToAlert(p);
 }
 
+// ------------------------------------------------------------------ ATR tab (ATR_SM 4h Buy/Sell: blinking + confirmed)
+const ax = { data: null, sel: null, side: "all", days: 1 };
+const asWhen = (x) => {
+  const t = x.time + 900, sameDay = tzDay(t) === tzDay(Date.now() / 1000);
+  return sameDay ? fmtClock(t).slice(0, 5) : fmtDate(t);
+};
+const AS_COLS = [
+  { label: "Signal", cell: (x) => el("span", { class: `as-pill ${x.side}${x.status === "blinking" ? " blink" : ""}`, text: x.side === "buy" ? "Buy" : "Sell" }) },
+  { label: "Status", cell: (x) => x.status === "blinking"
+      ? el("span", { title: "The 4h candle is still open — the signal disappears if price goes back over the line before the close", text: `blinking · closes ${fmtClock(x.closes).slice(0, 5)}` })
+      : el("span", { class: "check", text: "confirmed ✓" }) },
+  { label: () => `Time (${tzShort()})`, cell: (x) => x.status === "blinking" ? el("span", { class: "dim", text: "now" }) : el("span", { text: asWhen(x) }) },
+  { label: "Coin", cell: (x) => symNode(x.symbol) },
+  { label: "Price", cell: (x) => el("span", { text: fmtPrice(x.price) }) },
+  { label: "Line", cell: (x) => el("span", { title: "The indicator's trailing line (where it flips back)", text: `${fmtPrice(x.line)} (${signed(x.line / x.price - 1)})` }) },
+  { label: "Since", cell: (x) => x.status === "blinking" ? el("span", { class: "dim", text: "—" }) : changeNode(x.now) },
+  { label: "Still", cell: (x) => x.status === "blinking" ? el("span", { class: "dim", text: "—" })
+      : x.current ? el("span", { class: "check", text: "yes" }) : el("span", { class: "dim", text: "flipped back" }) },
+];
+
+async function loadAs() {
+  let d;
+  try { d = await (await fetch(`/api/atr_signals?days=${ax.days}`)).json(); } catch { return; }
+  ax.data = d;
+  renderAs();
+  if (!d.ready) setTimeout(() => { if (state.view === "atr") loadAs(); }, 10000);
+}
+
+function renderAs() {
+  const d = ax.data;
+  if (!d) return;
+  if (!d.ready) {
+    $("asNote").textContent = "Waiting for the first 4h update (a few minutes after the app starts; the first run downloads candles for every coin)…";
+    $("asBody").replaceChildren();
+    return;
+  }
+  $("asNote").textContent = `ATR_SM_BuySell, Period ${d.settings.period} / Multiplier ${d.settings.mult}, 4h candles, all ${d.coins} Bybit USDT perpetuals (no volume minimum). `
+    + "Blinking = the open candle would flip at the current price (can still disappear). Confirmed = the candle closed with the flip. Not advice.";
+  const items = (d.items || []).filter((x) => ax.side === "all" || x.side === ax.side);
+  const blink = items.filter((x) => x.status === "blinking").length;
+  $("asSub").textContent = `${blink} blinking · ${items.length - blink} confirmed · next 4h close ${fmtClock(d.next_close).slice(0, 5)}`;
+  $("asStatus").textContent = `updated ${fmtClock(Date.now() / 1000).slice(0, 5)}`;
+  $("asHead").replaceChildren(el("tr", {}, ...AS_COLS.map((c) => el("th", { text: typeof c.label === "function" ? c.label() : c.label }))));
+  if (!items.length) { $("asBody").replaceChildren(el("tr", {}, el("td", { colspan: AS_COLS.length, class: "empty", text: "No signals in this period." }))); return; }
+  const frag = document.createDocumentFragment();
+  for (const x of items) {
+    const tr = el("tr");
+    if (ax.sel && ax.sel.id === x.id) tr.classList.add("sel");
+    for (const c of AS_COLS) tr.append(el("td", {}, c.cell(x)));
+    tr.addEventListener("click", () => showAs(x));
+    frag.append(tr);
+  }
+  $("asBody").replaceChildren(frag);
+}
+
+async function showAs(x) {
+  ax.sel = x;
+  renderAs();
+  showDetail();
+  $("dTitle").replaceChildren(base(x.symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = `ATR_SM ${x.side === "buy" ? "Buy" : "Sell"} · 4h · ${x.status === "blinking" ? "blinking (candle still open)" : `confirmed ${fmtDate(x.time + 900)} ${tzShort()}`}`;
+  $("dFocus").hidden = x.status === "blinking";
+  $("dTrade").href = tradeUrl(x.symbol);
+  const stats = [
+    ["Signal price", fmtPrice(x.price), x.status === "blinking" ? "live price" : "4h candle close"],
+    ["Indicator line", fmtPrice(x.line), signed(x.line / x.price - 1)],
+    ["Since signal", x.status === "blinking" ? "—" : signed(x.now), ""],
+  ];
+  $("dStats").replaceChildren(...stats.map(([l, v, sub]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null))));
+  loadFutures(x.symbol);
+  await drawSymbol(x.symbol);
+  if (ax.sel !== x) return;
+  const buy = x.side === "buy";
+  if (x.status !== "blinking") {
+    candleSeries.setMarkers([{ time: x.time, position: buy ? "belowBar" : "aboveBar", shape: buy ? "arrowUp" : "arrowDown", color: css(buy ? "--up" : "--down"), text: buy ? "Buy" : "Sell" }]);
+  }
+  for (const pl of priceLines) candleSeries.removePriceLine(pl);
+  priceLines = [candleSeries.createPriceLine({ price: x.line, color: css(buy ? "--down" : "--up"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "ATR line" })];
+  if (x.status !== "blinking") zoomToAlert(x);
+}
+
+for (const [id, key] of [["asSide", "side"], ["asDays", "days"]]) {
+  $(id).addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    ax[key] = key === "days" ? Number(b.dataset.v) : b.dataset.v;
+    $(id).querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(y === b)));
+    if (key === "days") loadAs(); else renderAs();
+  });
+  $(id).querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(y.dataset.v === String(ax[key]))));
+}
+setInterval(() => { if (state.view === "atr") loadAs(); }, 30000);
+
 // ------------------------------------------------------------------ carry tab (spot long + perp short, collect funding)
 const cy = { data: null, minVol: 5e6, spotOnly: true, sel: null, capital: 1000, lev: 1, quote: null };
 const yr = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(1)}%`);
@@ -4285,7 +4415,7 @@ setInterval(renderClock, 1000);
 
 // ------------------------------------------------------------------ boot
 (async () => {
-  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal", "#radar": "radar", "#carry": "carry" }[location.hash] || "pumps";
+  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal", "#radar": "radar", "#carry": "carry", "#atr": "atr" }[location.hash] || "pumps";
   state.view = startView;
   document.body.classList.add(`view-${state.view}`);
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === startView)));

@@ -65,11 +65,10 @@ def _one(sym, since):
     k = k.ffill()
     c, h, l, q = (k[x].to_numpy() for x in ("c", "h", "l", "q"))
     trail, pos = trail_pos(c, h, l)
-    liquid = (pd.Series(q).rolling(6).sum() >= 1_000_000).to_numpy()
     n, out = len(c), []
     for i in np.flatnonzero((pos[1:] == 1) & (pos[:-1] != 1)) + 1:
         close_t = k.index[i] + H4
-        if close_t < since or not liquid[i]:
+        if close_t < since:
             continue
         e = c[i]
         end = min(n, i + 1 + MAXBARS)
@@ -95,6 +94,35 @@ def _one(sym, since):
                     "best_until_sell": float(best), "sold": sold_at, "long_now": bool(sold_at is None and pos[-1] == 1),
                     "now": float(c[-1] / e - 1), "done": bool(sold_at is not None or i + MAXBARS < n), **res})
     return out
+
+
+def signals(symbols, days=7):
+    """ATR tab: every Buy/Sell flip on closed 4h candles in the last `days` (no volume filter), plus each coin's
+    last trailing line, so the server can show 'blinking' flips on the forming candle from live prices."""
+    now = pd.Timestamp.now(tz="UTC")
+    since = now - pd.Timedelta(days=days)
+    items, states = [], {}
+    for s in sorted(symbols):
+        try:
+            k = radar.load(s)
+            if k is None or len(k) < 50 or k.index[-1] < now - 3 * H4:
+                continue
+            k = k.ffill()
+            c, h, l = (k[x].to_numpy() for x in ("c", "h", "l"))
+            trail, pos = trail_pos(c, h, l)
+            states[s] = {"line": float(trail[-1]), "close": float(c[-1]), "pos": int(pos[-1]),
+                         "bar_close": int((k.index[-1] + H4).timestamp())}
+            for i in range(max(1, len(c) - days * 6 - 1), len(c)):
+                if pos[i] != pos[i - 1] and pos[i] != 0:
+                    close_t = k.index[i] + H4
+                    if close_t < since:
+                        continue
+                    items.append({"id": f"{s}|{int(close_t.timestamp())}", "symbol": s, "side": "buy" if pos[i] == 1 else "sell",
+                                  "time": int(close_t.timestamp()) - 900, "price": float(c[i]), "line": float(trail[i]),
+                                  "now": float(c[-1] / c[i] - 1), "current": bool(pos[-1] == pos[i])})
+        except Exception as e:
+            print(f"atr signals {s}: {e}")
+    return {"items": items, "states": states, "built": time.time()}
 
 
 def scan(symbols, days=60):

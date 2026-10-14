@@ -734,6 +734,14 @@ def refresh_radar():
     try:
         syms = set(scanner.tracked_symbols())
         radar.update_store(sorted(syms | {"BTCUSDT"}))
+        # ATR tab: every perpetual (no volume floor) — quick, so it is ready before the slower scoring below
+        every = set(syms)
+        try:
+            every = set(radar.all_perpetuals())
+            radar.update_store(sorted(every - syms))
+            _rd["atrsig"] = atrstop.signals(every)
+        except Exception as e:
+            print(f"atr tab: {e}")
         _rd["message"] = "Scoring coins…"
         data = radar.scan(syms)
         if data is None:
@@ -756,7 +764,7 @@ def refresh_radar():
         except Exception as e:
             print(f"run picks: {e}")
         try:
-            _rd["atr"] = atrstop.scan(syms)
+            _rd["atr"] = atrstop.scan(every)
         except Exception as e:
             print(f"atr_sm: {e}")
     except Exception as e:
@@ -784,6 +792,52 @@ def api_atr():
         items.append({k: clean(v) if isinstance(v, float) else v for k, v in x.items()})
     items.sort(key=lambda x: -x["time"])
     return jsonify({"ready": True, "items": items, "record": a["record"], "settings": a["settings"], "built": a["built"]})
+
+
+_all_ticks = {"at": 0.0, "px": {}}
+
+
+def all_prices():
+    """Last price of every linear perpetual (one Bybit call, cached 20 s)."""
+    if time.time() - _all_ticks["at"] > 20:
+        try:
+            lst = exchange.get("/v5/market/tickers", {"category": "linear"})["list"]
+            _all_ticks.update(at=time.time(), px={t["symbol"]: float(t["lastPrice"]) for t in lst if t.get("lastPrice")})
+        except Exception as e:
+            print(f"tickers: {e}")
+    return _all_ticks["px"]
+
+
+@app.get("/api/atr_signals")
+def api_atr_signals():
+    """ATR tab: confirmed flips (closed 4h candles) + blinking flips (forming candle at the live price)."""
+    a = _rd.get("atrsig")
+    if not a:
+        return jsonify({"ready": False})
+    days = min(float(request.args.get("days", 1)), 7)
+    cutoff = time.time() - days * 86400
+    px = all_prices()
+    bar_open = int(time.time() // 14400) * 14400          # the forming 4h candle
+    items = []
+    for x in a["items"]:
+        if x["time"] < cutoff:
+            continue
+        x = dict(x, status="confirmed")
+        if px.get(x["symbol"]):
+            x["now"] = px[x["symbol"]] / x["price"] - 1
+        items.append(x)
+    for s, st in a["states"].items():
+        p = px.get(s)
+        if not p or st["bar_close"] != bar_open:       # store not updated for this candle yet
+            continue
+        side = "buy" if st["close"] < st["line"] < p else ("sell" if st["close"] > st["line"] > p else None)
+        if side:
+            items.append({"id": f"{s}|live", "symbol": s, "side": side, "status": "blinking", "time": int(time.time()) - 60,
+                          "price": p, "line": st["line"], "now": 0.0, "current": True, "closes": bar_open + 14400})
+    items = [{k: clean(v) if isinstance(v, float) else v for k, v in x.items()} for x in items]
+    items.sort(key=lambda x: (x["status"] != "blinking", -x["time"]))
+    return jsonify({"ready": True, "items": items, "coins": len(a["states"]), "built": a["built"], "next_close": bar_open + 14400,
+                    "settings": {"period": atrstop.PERIOD, "mult": atrstop.MULT}})
 
 
 @app.get("/api/radar")

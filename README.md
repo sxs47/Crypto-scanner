@@ -16,6 +16,7 @@ edge in the data (mainly smaller drawdowns).
 | **Pumps** | Every +30%-in-24h move over the last ~90 days, with charts |
 | **Signals** | Model-scored volatility watchlist and its out-of-sample backtest |
 | **Alerts** | **Blow-off watch** (paper shorts after 20× volume run-ups, with an altcoin-market switch and live track record); **Pre-pump watch** (volume and candle size jumped 8×/3× while price is flat; "squeeze setup" when most accounts are short) with its 30-day track record; live 15m setups (Trend / Ignition), 1-hour follow-through check, EMA/MACD charts, futures context (open interest, funding, long/short), notifications |
+| **ATR** | Every Bybit USDT perpetual (no volume minimum), ATR_SM 5/5 on 4h: Buy and Sell flips — *blinking* (the open candle would flip at the live price) and *confirmed* (candle closed with the flip). |
 | *(Alerts)* **ATR_SM Buy · 4h** | atrstop.py: the ATR_SM_BuySell TradingView indicator (ATR trailing line, by dysrupt / nifty_alchemist) on 4h, Period 5 / Multiplier 5 — best of 63 settings on 15m/1h/4h; Buys paper-tracked (+10% before −5%, +20% before −10%, best before Sell). Run picks show whether ATR_SM was in Buy mode. |
 | **Trend** | Daily EMA20/50 trend rule with volatility-target position sizes: today's status per coin and a backtest since 2020 |
 | **Planner** | Risk-based position sizing for Bybit futures: size, leverage, liquidation price, fees, funding, plus a risk-of-ruin simulation |
