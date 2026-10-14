@@ -31,6 +31,7 @@ import notify
 import atrstop
 import blowoff
 import carry
+import market
 import prepump
 import radar
 import runpicks
@@ -512,6 +513,9 @@ def _live_loop():
         cd = carry.data()["data"]
         if cd and time.time() - cd["built"] > 3600 and not carry.data()["running"]:
             threading.Thread(target=carry.refresh, daemon=True).start()
+        if time.time() - _mkt_saved[0] > 15 * 60:          # market-cap snapshot for the Market tab's 24h changes
+            _mkt_saved[0] = time.time()
+            threading.Thread(target=lambda: _safe_call(market.global_caps), daemon=True).start()
         bar = int(time.time() // 14400)
         if _rd["bar"] is not None and bar != _rd["bar"] and time.time() - bar * 14400 > 90 and not _rd["running"]:
             threading.Thread(target=refresh_radar, daemon=True).start()
@@ -792,6 +796,24 @@ def api_atr():
         items.append({k: clean(v) if isinstance(v, float) else v for k, v in x.items()})
     items.sort(key=lambda x: -x["time"])
     return jsonify({"ready": True, "items": items, "record": a["record"], "settings": a["settings"], "built": a["built"]})
+
+
+_mkt_saved = [0.0]
+
+
+def _safe_call(fn, *a):
+    try:
+        return fn(*a)
+    except Exception as e:
+        print(f"{getattr(fn, '__name__', fn)}: {e}")
+
+
+@app.get("/api/market")
+def api_market():
+    sym = request.args.get("symbol", "BTCUSDT").upper()
+    if sym not in ("BTCUSDT", "ETHUSDT", "SOLUSDT"):
+        abort(400)
+    return jsonify(market.overview(sym))
 
 
 _all_ticks = {"at": 0.0, "px": {}}
@@ -1100,7 +1122,7 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--set-password", action="store_true", help="set or change the login password, then exit")
     ap.add_argument("--setup-telegram", action="store_true", help="connect a Telegram bot for alerts, then exit")
-    ap.add_argument("--set-key", metavar="NAME", help="save an API key privately (helius or etherscan), then exit")
+    ap.add_argument("--set-key", metavar="NAME", help="save an API key privately (helius, etherscan or coinmarketcap), then exit")
     ap.add_argument("--no-collect", action="store_true", help="don't run the background data collector")
     args = ap.parse_args()
 

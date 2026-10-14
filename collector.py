@@ -24,6 +24,7 @@ Background data collection (runs inside app.py, or on its own: python collector.
 API keys for later wallet tools are stored in data/keys.json (not in git):
     python app.py --set-key helius
     python app.py --set-key etherscan
+    python app.py --set-key coinmarketcap   (Market tab: market caps + Fear & Greed)
 """
 
 import csv
@@ -75,8 +76,8 @@ def keys():
 
 def set_key_cli(name):
     name = name.lower()
-    if name not in ("helius", "etherscan"):
-        raise SystemExit("Key name must be 'helius' or 'etherscan'.")
+    if name not in ("helius", "etherscan", "coinmarketcap"):
+        raise SystemExit("Key name must be 'helius', 'etherscan' or 'coinmarketcap'.")
     val = getpass.getpass(f"Paste your {name} API key (it won't be shown): ").strip()
     if not val:
         raise SystemExit("Nothing entered; no change.")

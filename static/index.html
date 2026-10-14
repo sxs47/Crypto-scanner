@@ -466,7 +466,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       Pump Scanner
     </div>
     <nav class="seg nav" id="nav" aria-label="View">
-      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button><button data-view="radar">Radar</button><button data-view="carry">Carry</button><button data-view="atr">ATR</button>
+      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button><button data-view="radar">Radar</button><button data-view="carry">Carry</button><button data-view="atr">ATR</button><button data-view="market">Market</button>
     </nav>
     <div class="meta" id="meta">Loading…</div>
     <div class="spacer"></div>
@@ -980,6 +980,32 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       </div>
     </div>
     <div id="asDetailSlot"></div>
+  </section>
+ </div>
+
+ <div id="viewMarket" hidden>
+  <div class="sig-toolbar">
+    <div class="field">Coin
+      <div class="seg" id="mkCoin"><button data-v="BTCUSDT">BTC</button><button data-v="ETHUSDT">ETH</button><button data-v="SOLUSDT">SOL</button></div>
+    </div>
+    <span class="meta" id="mkStatus"></span>
+  </div>
+  <section class="kpis" id="mkKpis"></section>
+  <section style="display: grid; gap: 16px; margin-top: 16px">
+    <div class="card">
+      <div class="card-h"><h2 id="mkTechTitle">Technicals</h2><span class="sub">live candle · volume on the last closed candle</span></div>
+      <div class="table-scroll sig-scroll">
+        <table>
+          <thead id="mkHead"></thead>
+          <tbody id="mkBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2 id="mkDerivTitle">Positioning</h2></div>
+      <div class="stats" id="mkDeriv"></div>
+      <p class="pp-note">Market caps from CoinMarketCap (when its key is saved) or CoinGecko, Fear &amp; Greed from alternative.me, positioning from Bybit. From our tests: crowded longs and positive funding lean slightly down, crowded shorts and negative funding lean up; BTC above its EMA 200 made ATR_SM Buys a little better. Not advice.</p>
+    </div>
   </section>
  </div>
 
@@ -2204,7 +2230,7 @@ $("trainBtn").addEventListener("click", async () => {
 function setView(v) {
   const navKey = v;
   state.view = v;
-  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal", "view-radar", "view-carry", "view-atr");
+  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal", "view-radar", "view-carry", "view-atr", "view-market");
   document.body.classList.add(`view-${v}`);
   $("viewPumps").hidden = v !== "pumps";
   $("viewSignals").hidden = v !== "signals";
@@ -2215,6 +2241,7 @@ function setView(v) {
   $("viewRadar").hidden = v !== "radar";
   $("viewCarry").hidden = v !== "carry";
   $("viewAtr").hidden = v !== "atr";
+  $("viewMarket").hidden = v !== "market";
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === navKey)));
   // One chart instance, moved between the views
   const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot"), radar: $("rdDetailSlot"), atr: $("asDetailSlot") }[v];
@@ -2241,6 +2268,8 @@ function setView(v) {
     loadCarry();
   } else if (v === "atr") {
     loadAs();
+  } else if (v === "market") {
+    loadMarket();
   } else if (v === "alerts") {
     al.unseen = 0;
     updateBadge();
@@ -2261,6 +2290,7 @@ function refreshDetail() {
   if (state.view === "radar") { if (rd.sel) showRadar(rd.sel, false); return; }
   if (state.view === "carry") return;
   if (state.view === "atr") { if (ax.sel) showAs(ax.sel); return; }
+  if (state.view === "market") return;
   if (state.view === "trend") { if (tr.report) renderTrend(); if (tr.sel) showTrendCoin(tr.sel, false); }
   else if (state.view === "alerts") { if (at.sel) showAtr(at.sel); else if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); }
   else if (state.view === "signals") { if (sig.sel) showSignalCoin(sig.sel, false); }
@@ -4141,6 +4171,78 @@ for (const [id, key] of [["asSide", "side"], ["asDays", "days"]]) {
 }
 setInterval(() => { if (state.view === "atr") loadAs(); }, 30000);
 
+// ------------------------------------------------------------------ market tab (market caps, sentiment, technicals)
+const mk = { data: null, symbol: "BTCUSDT" };
+const usdBig = (v) => v == null ? "—" : v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : `$${(v / 1e6).toFixed(0)}M`;
+const chgTxt = (v) => v == null ? "" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(1)}% 24h`;
+const upDown = (good, text, title) => el("span", { class: good == null ? "dim" : good ? "pos" : "negt", text, title: title || "" });
+
+async function loadMarket() {
+  let d;
+  try { d = await (await fetch(`/api/market?symbol=${mk.symbol}`)).json(); } catch { return; }
+  mk.data = d;
+  renderMarket();
+}
+
+function renderMarket() {
+  const d = mk.data;
+  if (!d) return;
+  const c = d.caps, f = d.fng, coin = base(d.symbol);
+  const fngNote = f && f.now ? `${f.cmc ? `CoinMarketCap ${Math.round(f.cmc.value)} · ` : ""}yesterday ${f.yesterday.value} · week ago ${f.week.value} · month ago ${f.month.value}` : "";
+  $("mkKpis").replaceChildren(
+    kpi("Total crypto market cap", c ? usdBig(c.total) : "—", c ? `${c.total_chg != null ? chgTxt(c.total_chg) : ""} · ${c.source}` : "market caps unavailable", { hero: true }),
+    kpi("Bitcoin", c ? usdBig(c.btc) : "—", c ? `dominance ${c.btc_dom.toFixed(1)}%${c.dom_chg != null ? ` (${c.dom_chg >= 0 ? "+" : "−"}${Math.abs(c.dom_chg).toFixed(2)} pts)` : ""} · ${chgTxt(c.btc_chg)}` : ""),
+    kpi("Altcoins (all except BTC)", c ? usdBig(c.alts) : "—", c ? (c.alts_chg != null ? chgTxt(c.alts_chg) : "24h change after a day of snapshots") : ""),
+    kpi("Altcoins except ETH", c ? usdBig(c.alts_ex_eth) : "—", c ? (c.alts_ex_eth_chg != null ? chgTxt(c.alts_ex_eth_chg) : `ETH ${usdBig(c.eth)} · ${chgTxt(c.eth_chg)}`) : ""),
+    kpi("Fear & Greed", f && f.now ? `${f.now.value} · ${f.now.label}` : "—", fngNote),
+  );
+
+  const v = d.deriv;
+  const rows = v ? [
+    ["Price", fmtPrice(v.price), `${signed(v.change_24h)} 24h · range ${fmtPrice(v.low_24h)} – ${fmtPrice(v.high_24h)}`, v.change_24h >= 0],
+    ["Funding", `${(v.funding * 100).toFixed(4)}%`, `per 8h ≈ ${(v.funding * 3 * 365 * 100).toFixed(1)}%/yr · ${v.funding > 0 ? "longs pay shorts" : "shorts pay longs"}`, null],
+    ["Open interest", usdBig(v.oi_usd), v.oi_chg != null ? `${signed(v.oi_chg)} in 24h` : "", null],
+    ["Long accounts", v.long_share != null ? `${(v.long_share * 100).toFixed(0)}%` : "—", v.long_share_24h != null ? `24h ago ${(v.long_share_24h * 100).toFixed(0)}% · many longs = contrarian warning` : "", null],
+  ] : [];
+  $("mkDerivTitle").textContent = `${coin} positioning · Bybit perpetual`;
+  $("mkDeriv").replaceChildren(...rows.map(([l, val, sub, good]) =>
+    el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+      el("div", { class: "value" }, good == null ? val : upDown(good, val), sub ? el("small", { text: ` · ${sub}` }) : null))));
+
+  const tfs = ["1d", "4h", "1h", "15m"].filter((k) => d.tf[k]);
+  const T = (k) => d.tf[k];
+  const emaCell = (n) => (k) => { const e = T(k).ema[n]; return upDown(e.dist >= 0, `${e.dist >= 0 ? "▲ above" : "▼ below"} ${signed(e.dist)}`, `EMA ${n} = ${fmtPrice(e.value)}`); };
+  const lines = [
+    ["Overall", (k) => { const t = T(k), r = t.score / t.score_max;
+      return upDown(r >= 0.7 ? true : r <= 0.3 ? false : null, `${r >= 0.7 ? "Bullish" : r <= 0.3 ? "Bearish" : "Mixed"} (${t.score}/${t.score_max})`, "Count of: above EMA 7/21/50/200, RSI > 50, MACD histogram > 0, ATR_SM in Buy"); }],
+    ["Price · this candle", (k) => el("span", {}, `${fmtPrice(T(k).price)} `, changeNode(T(k).candle_chg))],
+    ...[7, 21, 50, 200].map((n) => [`EMA ${n}`, emaCell(n)]),
+    ["RSI 14", (k) => { const r = T(k).rsi, p = T(k).rsi_prev;
+      const zone = r >= 70 ? "overbought" : r <= 30 ? "oversold" : r > 50 ? "bullish side" : "bearish side";
+      return upDown(r >= 70 || r <= 30 ? null : r > 50, `${r.toFixed(1)} ${r > p ? "↑" : "↓"} · ${zone}`); }],
+    ["MACD 12/26/9", (k) => { const t = T(k), above = t.macd > t.macd_signal, rising = t.macd_hist > t.macd_hist_prev;
+      return upDown(above, `${above ? "above" : "below"} signal · histogram ${rising ? "rising" : "falling"}`); }],
+    ["Volume (last closed)", (k) => { const t = T(k);
+      return upDown(t.vol_ratio >= 1.5 ? t.vol_up : null, `${t.vol_ratio.toFixed(1)}× average · ${t.vol_up ? "green" : "red"} candle`, "Last closed candle's volume vs the 20 before it"); }],
+    ["ATR_SM 5/5", (k) => { const t = T(k), buy = t.atr_pos === 1;
+      return el("span", {}, el("span", { class: `as-pill ${buy ? "buy" : "sell"}`, text: buy ? "Buy" : "Sell" }), el("span", { class: "dim", text: ` for ${t.atr_bars} candle${t.atr_bars === 1 ? "" : "s"}` })); }],
+  ];
+  $("mkTechTitle").textContent = `${coin} technicals`;
+  $("mkHead").replaceChildren(el("tr", {}, el("th", { text: "" }), ...tfs.map((k) => el("th", { text: k === "1d" ? "Daily" : k }))));
+  $("mkBody").replaceChildren(...lines.map(([label, cell]) => el("tr", {}, el("td", {}, el("b", { text: label })), ...tfs.map((k) => el("td", {}, cell(k))))));
+  $("mkStatus").textContent = `updated ${fmtClock(d.built).slice(0, 5)} · refreshes every minute`;
+}
+
+$("mkCoin").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  mk.symbol = b.dataset.v;
+  $("mkCoin").querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(y === b)));
+  loadMarket();
+});
+$("mkCoin").querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(y.dataset.v === mk.symbol)));
+setInterval(() => { if (state.view === "market") loadMarket(); }, 60000);
+
 // ------------------------------------------------------------------ carry tab (spot long + perp short, collect funding)
 const cy = { data: null, minVol: 5e6, spotOnly: true, sel: null, capital: 1000, lev: 1, quote: null };
 const yr = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(1)}%`);
@@ -4415,7 +4517,7 @@ setInterval(renderClock, 1000);
 
 // ------------------------------------------------------------------ boot
 (async () => {
-  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal", "#radar": "radar", "#carry": "carry", "#atr": "atr" }[location.hash] || "pumps";
+  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal", "#radar": "radar", "#carry": "carry", "#atr": "atr", "#market": "market" }[location.hash] || "pumps";
   state.view = startView;
   document.body.classList.add(`view-${state.view}`);
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === startView)));
