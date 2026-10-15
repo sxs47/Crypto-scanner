@@ -4115,6 +4115,12 @@ async function showRun(p) {
   zoomToAlert(p);
 }
 
+// spot-led vs futures-led (coins with Bybit spot only)
+const leadNode = (rel) => rel == null ? el("span", { class: "dim", title: "No Bybit spot market for this coin", text: "—" })
+  : rel < 0.8 ? el("span", { class: "negt", title: `Spot share of trading is ${rel.toFixed(2)}× its normal — leveraged traders push while spot buyers stay away. Such signals faded more often in tests.`, text: "⚠️ futures-led" })
+  : rel > 1.25 ? el("span", { class: "pos", title: `Spot share ${rel.toFixed(2)}× normal — real buyers on spot`, text: "spot-led" })
+  : el("span", { class: "dim", title: `Spot share ${rel.toFixed(2)}× normal`, text: "normal" });
+
 // ------------------------------------------------------------------ ATR tab (ATR_SM 4h Buy/Sell: blinking + confirmed)
 const ax = { data: null, sel: null, side: "all", days: 1 };
 const asWhen = (x) => {
@@ -4130,6 +4136,7 @@ const AS_COLS = [
   { label: "Coin", cell: (x) => symNode(x.symbol) },
   { label: "1h ATR", cell: (x) => x.status !== "blinking" || x.h1 == null ? el("span", { class: "dim", text: "—" })
       : el("span", { class: x.h1 === (x.side === "buy" ? 1 : -1) ? "check" : "negt", title: "ATR_SM 5/5 on the last closed 1h candle", text: x.h1 === 1 ? "Buy" : "Sell" }) },
+  { label: "Spot / futures", cell: (x) => leadNode(x.lead) },
   { label: "Price", cell: (x) => el("span", { text: fmtPrice(x.price) }) },
   { label: "Line", cell: (x) => el("span", { title: "The indicator's trailing line (where it flips back)", text: `${fmtPrice(x.line)} (${signed(x.line / x.price - 1)})` }) },
   { label: "Since", cell: (x) => x.status === "blinking" ? el("span", { class: "dim", text: "—" }) : changeNode(x.now) },
@@ -4331,8 +4338,8 @@ function renderEarly() {
   $("eaNote").textContent = "Coins with fresh early signals in the last 24h, most signals first. More signals lining up = stronger case, not a guarantee. "
     + (r && r.finished ? `ATR_SM Buy live record: ${pctf(r.t10_5, 0)} reached +10% before −5%. ` : "")
     + "Use your own stop (~−5%) and take part of the profit early. Not advice.";
-  $("eaHead").replaceChildren(el("tr", {}, ...["Coin", "Signals", "What lined up", "First signal", "Since first", "Price"].map((t) => el("th", { text: t }))));
-  if (!rows.length) { $("eaBody").replaceChildren(el("tr", {}, el("td", { colspan: 6, class: "empty", text: "No coins with this many signals right now." }))); return; }
+  $("eaHead").replaceChildren(el("tr", {}, ...["Coin", "Signals", "What lined up", "Spot / futures", "First signal", "Since first", "Price"].map((t) => el("th", { text: t }))));
+  if (!rows.length) { $("eaBody").replaceChildren(el("tr", {}, el("td", { colspan: 7, class: "empty", text: "No coins with this many signals right now." }))); return; }
   const frag = document.createDocumentFragment();
   for (const x of rows) {
     const tr = el("tr");
@@ -4343,7 +4350,7 @@ function renderEarly() {
       style: s.kind.startsWith("atr") ? "margin-right:4px" : "margin-right:4px;background:var(--accent);color:#fff",
       title: EA_HELP[s.kind] || "", text: `${EA_ICON[s.kind] || ""} ${s.label} · ${eaAgo(s.time)}`,
     })));
-    tr.append(el("td", {}, symNode(x.symbol)), el("td", {}, dots), el("td", {}, chips),
+    tr.append(el("td", {}, symNode(x.symbol)), el("td", {}, dots), el("td", {}, chips), el("td", {}, leadNode(x.lead)),
       el("td", { text: eaAgo(x.first) }), el("td", {}, changeNode(x.since_first)), el("td", { text: x.price ? fmtPrice(x.price) : "—" }));
     tr.addEventListener("click", () => showEarly(x));
     frag.append(tr);

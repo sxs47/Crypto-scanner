@@ -36,6 +36,7 @@ import market
 import prepump
 import radar
 import runpicks
+import spotflow
 
 import exchange
 import futures
@@ -750,6 +751,10 @@ def refresh_radar():
             _rd["atrsig"] = atrstop.signals(every)
         except Exception as e:
             print(f"atr tab: {e}")
+        try:                                   # spot-led vs futures-led warning
+            _rd["lead"] = spotflow.lead(spotflow.update_store(every))
+        except Exception as e:
+            print(f"spotflow: {e}")
         _rd["message"] = "Scoring coins…"
         data = radar.scan(syms)
         if data is None:
@@ -847,7 +852,7 @@ def atr_items(days):
     for x in a["items"]:
         if x["time"] < cutoff:
             continue
-        x = dict(x, status="confirmed")
+        x = dict(x, status="confirmed", lead=_rd.get("lead", {}).get(x["symbol"]))
         if px.get(x["symbol"]):
             x["now"] = px[x["symbol"]] / x["price"] - 1
         items.append(x)
@@ -858,7 +863,8 @@ def atr_items(days):
         side = "buy" if st["close"] < st["line"] < p else ("sell" if st["close"] > st["line"] > p else None)
         if side:
             items.append({"id": f"{s}|live", "symbol": s, "side": side, "status": "blinking", "time": int(time.time()) - 60,
-                          "price": p, "line": st["line"], "now": 0.0, "current": True, "closes": bar_open + 14400})
+                          "price": p, "line": st["line"], "now": 0.0, "current": True, "closes": bar_open + 14400,
+                          "lead": _rd.get("lead", {}).get(s)})
     return items
 
 
@@ -927,6 +933,7 @@ def early_board():
         kinds = {x["kind"] for x in b["signals"]}
         b["score"] = len(kinds - {"atr_blink"}) + (1 if "atr_blink" in kinds and "atr_buy" not in kinds else 0)
         b["price"] = px.get(b["symbol"])
+        b["lead"] = _rd.get("lead", {}).get(b["symbol"])
         b["since_first"] = (b["price"] / b["first_price"] - 1) if b["price"] and b["first_price"] else None
         b["signals"].sort(key=lambda x: x["time"])
         out.append(b)

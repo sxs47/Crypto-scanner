@@ -18,6 +18,7 @@ import requests
 
 import exchange
 import prepump
+import spotflow
 import scanner
 
 CONFIG_PATH = scanner.DATA_DIR / "telegram.json"
@@ -139,14 +140,15 @@ def format_atr(items, btc4h):
             base = x["symbol"].removesuffix("USDT")
             h1 = {1: "1h Buy ✓", -1: "1h Sell ✗"}.get(x.get("h1"), "1h —")
             line = (x["price"] - x["line"]) / x["price"]
-            lines.append(f"<b>{_h(base)}</b>/USDT · price {x['price']:.6g} · ATR line −{line * 100:.0f}% · {h1} · "
+            fl = " · ⚠️ futures-led" if spotflow.label(x.get("lead")) == "futures" else ""
+            lines.append(f"<b>{_h(base)}</b>/USDT · price {x['price']:.6g} · ATR line −{line * 100:.0f}% · {h1}{fl} · "
                          f"<a href=\"{exchange.trade_url(x['symbol'])}\">chart</a>")
         if len(group) > 12:
             lines.append(f"…and {len(group) - 12} more in the ATR tab")
     if btc4h:
         weak = btc4h["score"] <= 2
         lines.append(f"BTC 4h: {'bearish ⚠️ alts fall harder, use smaller size' if weak else 'ok'} ({btc4h['score']}/{btc4h['score_max']})")
-    lines.append("<i>Blinking: about half fade before the close. Use your own stop (~−5%), the ATR line is far. Not advice.</i>")
+    lines.append("<i>Blinking: about half fade before the close. ⚠️ futures-led = leverage pushing while spot buyers stay away; those faded more often in tests. Use your own stop (~−5%). Not advice.</i>")
     return "\n".join(lines)
 
 
@@ -163,12 +165,13 @@ def format_early(boards, btc4h):
         base = b["symbol"].removesuffix("USDT")
         sig = ", ".join(x["label"] for x in b["signals"])
         price = f" · price {b['price']:.6g}" if b.get("price") else ""
-        lines.append(f"<b>{_h(base)}</b>/USDT · {b['score']} signals: {_h(sig)}{price} · "
+        fl = " · ⚠️ futures-led" if spotflow.label(b.get("lead")) == "futures" else ""
+        lines.append(f"<b>{_h(base)}</b>/USDT · {b['score']} signals: {_h(sig)}{price}{fl} · "
                      f"<a href=\"{exchange.trade_url(b['symbol'])}\">chart</a>")
     if btc4h:
         weak = btc4h["score"] <= 2
         lines.append(f"BTC 4h: {'bearish ⚠️ alts fall harder, use smaller size' if weak else 'ok'} ({btc4h['score']}/{btc4h['score_max']})")
-    lines.append("<i>Blinking = 4h candle not closed yet (about half fade). Use your own stop (~−5%). Not advice.</i>")
+    lines.append("<i>Blinking = 4h candle not closed yet (about half fade). ⚠️ futures-led = leverage pushing while spot buyers stay away; those faded more often in tests. Use your own stop (~−5%). Not advice.</i>")
     return "\n".join(lines)
 
 
