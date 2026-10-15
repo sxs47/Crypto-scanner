@@ -18,6 +18,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
 import pandas as pd
 import html
 from datetime import timedelta
@@ -513,6 +514,9 @@ def _live_loop():
         cd = carry.data()["data"]
         if cd and time.time() - cd["built"] > 3600 and not carry.data()["running"]:
             threading.Thread(target=carry.refresh, daemon=True).start()
+        if time.time() - _early_check[0] > 60:
+            _early_check[0] = time.time()
+            threading.Thread(target=lambda: (_safe_call(check_early), _safe_call(check_atr)), daemon=True).start()
         if time.time() - _mkt_saved[0] > 15 * 60:          # market-cap snapshot for the Market tab's 24h changes
             _mkt_saved[0] = time.time()
             threading.Thread(target=lambda: _safe_call(market.global_caps), daemon=True).start()
@@ -799,6 +803,7 @@ def api_atr():
 
 
 _mkt_saved = [0.0]
+_early_check = [0.0]
 
 
 def _safe_call(fn, *a):
@@ -830,13 +835,11 @@ def all_prices():
     return _all_ticks["px"]
 
 
-@app.get("/api/atr_signals")
-def api_atr_signals():
-    """ATR tab: confirmed flips (closed 4h candles) + blinking flips (forming candle at the live price)."""
+def atr_items(days):
+    """ATR tab rows: confirmed flips in the last `days` + blinking flips on the forming 4h candle (live price)."""
     a = _rd.get("atrsig")
     if not a:
-        return jsonify({"ready": False})
-    days = min(float(request.args.get("days", 1)), 7)
+        return []
     cutoff = time.time() - days * 86400
     px = all_prices()
     bar_open = int(time.time() // 14400) * 14400          # the forming 4h candle
@@ -856,6 +859,169 @@ def api_atr_signals():
         if side:
             items.append({"id": f"{s}|live", "symbol": s, "side": side, "status": "blinking", "time": int(time.time()) - 60,
                           "price": p, "line": st["line"], "now": 0.0, "current": True, "closes": bar_open + 14400})
+    return items
+
+
+_h1_cache = {}
+
+
+def atr_1h(symbol):
+    """ATR_SM 5/5 state on the last closed 1h candle: 1 Buy, -1 Sell (cached 5 min per coin)."""
+    hit = _h1_cache.get(symbol)
+    if hit and time.time() - hit[0] < 300:
+        return hit[1]
+    try:
+        rows = exchange.get("/v5/market/kline", {"category": "linear", "symbol": symbol, "interval": "60", "limit": 300})["list"][::-1][:-1]
+        c, h, l = (np.array([float(r[k]) for r in rows]) for k in (4, 2, 3))
+        _, pos = atrstop.trail_pos(c, h, l)
+        state = int(pos[-1])
+    except Exception as e:
+        print(f"atr 1h {symbol}: {e}")
+        state = None
+    _h1_cache[symbol] = (time.time(), state)
+    return state
+
+
+EARLY_HOURS = 24
+
+
+def early_board():
+    """Early entries: every coin with at least one fresh early signal, scored by how many line up.
+    Signals (last 24h): ATR_SM 4h Buy confirmed and still in Buy, ATR Buy blinking now, open Run pick,
+    pre-pump volume flag, Radar pick."""
+    now = time.time()
+    cutoff = now - EARLY_HOURS * 3600
+    px = all_prices()
+    board = {}
+
+    def add(sym, kind, t, price, label):
+        b = board.setdefault(sym, {"symbol": sym, "signals": [], "first": t, "first_price": price})
+        if any(x["kind"] == kind for x in b["signals"]):
+            return
+        b["signals"].append({"kind": kind, "time": t, "label": label})
+        if t < b["first"]:
+            b["first"], b["first_price"] = t, price
+
+    for x in atr_items(1):
+        if x["side"] != "buy":
+            continue
+        if x["status"] == "blinking":
+            add(x["symbol"], "atr_blink", now, x["price"], "ATR Buy blinking")
+        elif x["current"]:
+            add(x["symbol"], "atr_buy", x["time"] + 900, x["price"], "ATR Buy")
+    rr = _rd.get("runs")
+    if rr:
+        for p in rr["picks"]:
+            if p["time"] >= cutoff and not p.get("done"):
+                add(p["symbol"], "run", p["time"] + 900, p["price"], "Run pick")
+    for f in list(_pp["flags"].values()):
+        if f["time"] >= cutoff:
+            add(f["symbol"], "volume", f["time"] + 900, f["price"], "Volume waking")
+    rd = _rd.get("data")
+    if rd:
+        for p in rd["picks"]:
+            if p["time"] >= cutoff:
+                add(p["symbol"], "radar", p["time"] + 900, p["price"], "Radar")
+    out = []
+    for b in board.values():
+        kinds = {x["kind"] for x in b["signals"]}
+        b["score"] = len(kinds - {"atr_blink"}) + (1 if "atr_blink" in kinds and "atr_buy" not in kinds else 0)
+        b["price"] = px.get(b["symbol"])
+        b["since_first"] = (b["price"] / b["first_price"] - 1) if b["price"] and b["first_price"] else None
+        b["signals"].sort(key=lambda x: x["time"])
+        out.append(b)
+    out.sort(key=lambda b: (-b["score"], -max(x["time"] for x in b["signals"])))
+    return out
+
+
+_early_sent = {"seeded": False, "sent": {}}
+
+
+_atr_sent = {"seeded": False, "sent": set()}
+
+
+def check_atr():
+    """Telegram: ATR_SM 4h Buys — confirmed (candle closed) and, if chosen, blinking (open candle)."""
+    mode = notify.atr_mode()
+    if not mode or not _rd.get("atrsig"):
+        return
+    now = time.time()
+    items = [x for x in atr_items(0.25) if x["side"] == "buy" and (x["status"] == "confirmed" or mode == "all")]
+    bar_open = int(now // 14400) * 14400
+    key = lambda x: x["id"] if x["status"] == "confirmed" else f"{x['symbol']}|blink|{bar_open}"
+    sent = _atr_sent["sent"]
+    if not _atr_sent["seeded"]:
+        sent.update(key(x) for x in items)
+        _atr_sent["seeded"] = True
+        return
+    new = [x for x in items if key(x) not in sent]
+    if not new:
+        return
+    sent.update(key(x) for x in new)
+    for x in new:
+        x["h1"] = atr_1h(x["symbol"])
+    btc = None
+    try:
+        btc = market.overview("BTCUSDT")["tf"].get("4h")
+    except Exception:
+        pass
+    notify.send(notify.format_atr(new, btc))
+
+
+def check_early():
+    """Telegram: a coin reaching the chosen number of early signals (once per coin per 12h, again if it gains one)."""
+    if not _rd.get("atrsig"):
+        return
+    need = notify.early_threshold()
+    hits = [b for b in early_board() if need and b["score"] >= need]
+    sent = _early_sent["sent"]
+    if not _early_sent["seeded"]:                # don't re-send what was already there when the app started
+        for b in hits:
+            sent[b["symbol"]] = (b["score"], time.time())
+        _early_sent["seeded"] = True
+        return
+    new = [b for b in hits if b["symbol"] not in sent or b["score"] > sent[b["symbol"]][0]
+           or time.time() - sent[b["symbol"]][1] > 12 * 3600]
+    if not new:
+        return
+    for b in new:
+        sent[b["symbol"]] = (b["score"], time.time())
+    btc = None
+    try:
+        btc = market.overview("BTCUSDT")["tf"].get("4h")
+    except Exception:
+        pass
+    notify.send(notify.format_early(new, btc))
+
+
+@app.get("/api/early")
+def api_early():
+    if not _rd.get("atrsig") and not _pp["ready"]:
+        return jsonify({"ready": False})
+    board = [{k: clean(v) if isinstance(v, float) else v for k, v in b.items()} for b in early_board()]
+    btc = None
+    try:
+        t = market.overview("BTCUSDT")["tf"]
+        btc = {k: {"score": v["score"], "score_max": v["score_max"], "atr_pos": v["atr_pos"], "ema200": v["ema"]["200"]["dist"]}
+               for k, v in t.items() if k in ("1d", "4h", "1h")}
+    except Exception as e:
+        print(f"early btc: {e}")
+    rec = (_rd.get("atr") or {}).get("record")
+    return jsonify({"ready": True, "board": board, "btc": btc, "atr_record": rec, "now": time.time()})
+
+
+@app.get("/api/atr_signals")
+def api_atr_signals():
+    """ATR tab: confirmed flips (closed 4h candles) + blinking flips (forming candle at the live price)."""
+    a = _rd.get("atrsig")
+    if not a:
+        return jsonify({"ready": False})
+    days = min(float(request.args.get("days", 1)), 7)
+    bar_open = int(time.time() // 14400) * 14400
+    items = atr_items(days)
+    for x in items:
+        if x["status"] == "blinking":
+            x["h1"] = atr_1h(x["symbol"])
     items = [{k: clean(v) if isinstance(v, float) else v for k, v in x.items()} for x in items]
     items.sort(key=lambda x: (x["status"] != "blinking", -x["time"]))
     return jsonify({"ready": True, "items": items, "coins": len(a["states"]), "built": a["built"], "next_close": bar_open + 14400,

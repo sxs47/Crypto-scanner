@@ -466,7 +466,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       Pump Scanner
     </div>
     <nav class="seg nav" id="nav" aria-label="View">
-      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button><button data-view="radar">Radar</button><button data-view="carry">Carry</button><button data-view="atr">ATR</button><button data-view="market">Market</button>
+      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="early">Early</button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button><button data-view="radar">Radar</button><button data-view="carry">Carry</button><button data-view="atr">ATR</button><button data-view="market">Market</button>
     </nav>
     <div class="meta" id="meta">Loading…</div>
     <div class="spacer"></div>
@@ -691,6 +691,12 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       <label class="toggle field"><input type="checkbox" id="tgBtc"> BTC daily trend changes</label>
       <div class="field">Pre-pump watch
         <div class="seg" id="tgPrepump"><button data-v="off">Off</button><button data-v="squeeze">Squeeze setups</button><button data-v="all">All flags</button></div>
+      </div>
+      <div class="field">ATR Buy · 4h
+        <div class="seg" id="tgAtr"><button data-v="off">Off</button><button data-v="confirmed">Confirmed</button><button data-v="all">Blinking + confirmed</button></div>
+      </div>
+      <div class="field">Early entries
+        <div class="seg" id="tgEarly"><button data-v="off">Off</button><button data-v="2">2+ signals</button><button data-v="3">3+ signals</button></div>
       </div>
       <div class="field">Radar picks
         <div class="seg" id="tgRadar"><button data-v="off">Off</button><button data-v="all">On</button></div>
@@ -955,6 +961,31 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       <p class="pp-note">Last 4 weeks of the rotation (picked from the week before, funding earned before switching costs):</p>
       <ul class="why-list" id="cyWeeks" style="margin: 0 16px 16px"></ul>
     </div>
+  </section>
+ </div>
+
+ <div id="viewEarly" hidden>
+  <div class="warn info" role="note" id="eaBtc">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <div id="eaBtcText"></div>
+  </div>
+  <div class="sig-toolbar">
+    <div class="field">Show
+      <div class="seg" id="eaMin"><button data-v="1">All</button><button data-v="2">2+ signals</button><button data-v="3">3+ signals</button></div>
+    </div>
+  </div>
+  <section class="main">
+    <div class="card">
+      <div class="card-h"><h2>Early entries</h2><span class="sub" id="eaSub"></span></div>
+      <p class="pp-note" id="eaNote"></p>
+      <div class="table-scroll sig-scroll">
+        <table>
+          <thead id="eaHead"></thead>
+          <tbody id="eaBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="eaDetailSlot"></div>
   </section>
  </div>
 
@@ -2230,7 +2261,7 @@ $("trainBtn").addEventListener("click", async () => {
 function setView(v) {
   const navKey = v;
   state.view = v;
-  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal", "view-radar", "view-carry", "view-atr", "view-market");
+  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal", "view-radar", "view-carry", "view-atr", "view-market", "view-early");
   document.body.classList.add(`view-${v}`);
   $("viewPumps").hidden = v !== "pumps";
   $("viewSignals").hidden = v !== "signals";
@@ -2242,9 +2273,10 @@ function setView(v) {
   $("viewCarry").hidden = v !== "carry";
   $("viewAtr").hidden = v !== "atr";
   $("viewMarket").hidden = v !== "market";
+  $("viewEarly").hidden = v !== "early";
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === navKey)));
   // One chart instance, moved between the views
-  const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot"), radar: $("rdDetailSlot"), atr: $("asDetailSlot") }[v];
+  const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot"), radar: $("rdDetailSlot"), atr: $("asDetailSlot"), early: $("eaDetailSlot") }[v];
   if (slot) slot.append($("detail"));
   $("dFocus").textContent = v === "alerts" ? "Zoom to alert" : "Zoom to event";
   if (history.replaceState) history.replaceState(null, "", navKey === "pumps" ? "#" : `#${navKey}`);
@@ -2270,6 +2302,8 @@ function setView(v) {
     loadAs();
   } else if (v === "market") {
     loadMarket();
+  } else if (v === "early") {
+    loadEarly();
   } else if (v === "alerts") {
     al.unseen = 0;
     updateBadge();
@@ -2291,6 +2325,7 @@ function refreshDetail() {
   if (state.view === "carry") return;
   if (state.view === "atr") { if (ax.sel) showAs(ax.sel); return; }
   if (state.view === "market") return;
+  if (state.view === "early") { if (ea.sel && ea.data) { const x = (ea.data.board || []).find((b) => b.symbol === ea.sel); if (x) showEarly(x); } return; }
   if (state.view === "trend") { if (tr.report) renderTrend(); if (tr.sel) showTrendCoin(tr.sel, false); }
   else if (state.view === "alerts") { if (at.sel) showAtr(at.sel); else if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); }
   else if (state.view === "signals") { if (sig.sel) showSignalCoin(sig.sel, false); }
@@ -3004,6 +3039,8 @@ function renderTg() {
   $("tgPrepump").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === (tg.prepump || "squeeze"))));
   $("tgBlowoff").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === (tg.blowoff || "off"))));
   $("tgRadar").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === (tg.radar || "off"))));
+  $("tgEarly").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === (tg.early || "off"))));
+  $("tgAtr").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === (tg.atr || "off"))));
 }
 async function loadTg() {
   try { tg = await (await fetch("/api/telegram")).json(); } catch { tg = null; }
@@ -3028,6 +3065,8 @@ $("tgBtc").addEventListener("change", (e) => saveTg({ trend_changes: e.target.ch
 $("tgPrepump").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ prepump: b.dataset.v }); });
 $("tgBlowoff").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ blowoff: b.dataset.v }); });
 $("tgRadar").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ radar: b.dataset.v }); });
+$("tgEarly").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ early: b.dataset.v }); });
+$("tgAtr").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) saveTg({ atr: b.dataset.v }); });
 $("tgTest").addEventListener("click", async () => {
   $("tgTest").disabled = true;
   await saveTg({ test: true });
@@ -4089,6 +4128,8 @@ const AS_COLS = [
       : el("span", { class: "check", text: "confirmed ✓" }) },
   { label: () => `Time (${tzShort()})`, cell: (x) => x.status === "blinking" ? el("span", { class: "dim", text: "now" }) : el("span", { text: asWhen(x) }) },
   { label: "Coin", cell: (x) => symNode(x.symbol) },
+  { label: "1h ATR", cell: (x) => x.status !== "blinking" || x.h1 == null ? el("span", { class: "dim", text: "—" })
+      : el("span", { class: x.h1 === (x.side === "buy" ? 1 : -1) ? "check" : "negt", title: "ATR_SM 5/5 on the last closed 1h candle", text: x.h1 === 1 ? "Buy" : "Sell" }) },
   { label: "Price", cell: (x) => el("span", { text: fmtPrice(x.price) }) },
   { label: "Line", cell: (x) => el("span", { title: "The indicator's trailing line (where it flips back)", text: `${fmtPrice(x.line)} (${signed(x.line / x.price - 1)})` }) },
   { label: "Since", cell: (x) => x.status === "blinking" ? el("span", { class: "dim", text: "—" }) : changeNode(x.now) },
@@ -4242,6 +4283,97 @@ $("mkCoin").addEventListener("click", (e) => {
 });
 $("mkCoin").querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(y.dataset.v === mk.symbol)));
 setInterval(() => { if (state.view === "market") loadMarket(); }, 60000);
+
+// ------------------------------------------------------------------ early entries tab
+const ea = { data: null, sel: null, min: 1 };
+const EA_ICON = { atr_buy: "▲", atr_blink: "◌", run: "★", volume: "📊", radar: "📡" };
+const EA_HELP = {
+  atr_buy: "ATR_SM 4h Buy confirmed in the last 24h and still in Buy (live record: ~54% reached +10% before −5%)",
+  atr_blink: "ATR_SM Buy forming on the open 4h candle — about half fade before the close; wait for the close or use a small size",
+  run: "Run pick: positioning + indicators lean up (tested: +10% before −5% ~38–46% vs 33% random)",
+  volume: "Pre-pump: volume woke up ≥8× while price was flat — a big move is more likely, direction unknown",
+  radar: "Radar: big move likely in either direction",
+};
+
+async function loadEarly() {
+  let d;
+  try { d = await (await fetch("/api/early")).json(); } catch { return; }
+  ea.data = d;
+  renderEarly();
+  if (!d.ready) setTimeout(() => { if (state.view === "early") loadEarly(); }, 10000);
+}
+
+function eaAgo(t) {
+  const m = Math.max(0, Math.round((Date.now() / 1000 - t) / 60));
+  return m < 2 ? "now" : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
+}
+
+function renderEarly() {
+  const d = ea.data;
+  if (!d) return;
+  if (!d.ready) {
+    $("eaNote").textContent = "Waiting for the first scans (a few minutes after the app starts)…";
+    $("eaBody").replaceChildren();
+    return;
+  }
+  const b = d.btc;
+  const tfTxt = (k) => b && b[k] ? `${k === "1d" ? "Daily" : k} ${b[k].score}/${b[k].score_max}` : "";
+  const weak = b && b["4h"] && b["4h"].score <= 2;
+  $("eaBtc").className = `warn ${weak ? "" : "info"}`;
+  $("eaBtcText").replaceChildren(
+    el("b", { text: weak ? "BTC is weak on 4h — altcoins fall harder now: fewer trades, smaller size, tight stops. " : "BTC is not weak on 4h. " }),
+    `BTC trend score: ${[tfTxt("1d"), tfTxt("4h"), tfTxt("1h")].filter(Boolean).join(" · ")} (7/7 = all bullish).`,
+  );
+  const rows = (d.board || []).filter((x) => x.score >= ea.min);
+  const strong = (d.board || []).filter((x) => x.score >= 2).length;
+  $("eaSub").textContent = `${rows.length} coin${rows.length === 1 ? "" : "s"} · ${strong} with 2+ signals · updates every 30 s`;
+  const r = d.atr_record;
+  $("eaNote").textContent = "Coins with fresh early signals in the last 24h, most signals first. More signals lining up = stronger case, not a guarantee. "
+    + (r && r.finished ? `ATR_SM Buy live record: ${pctf(r.t10_5, 0)} reached +10% before −5%. ` : "")
+    + "Use your own stop (~−5%) and take part of the profit early. Not advice.";
+  $("eaHead").replaceChildren(el("tr", {}, ...["Coin", "Signals", "What lined up", "First signal", "Since first", "Price"].map((t) => el("th", { text: t }))));
+  if (!rows.length) { $("eaBody").replaceChildren(el("tr", {}, el("td", { colspan: 6, class: "empty", text: "No coins with this many signals right now." }))); return; }
+  const frag = document.createDocumentFragment();
+  for (const x of rows) {
+    const tr = el("tr");
+    if (ea.sel === x.symbol) tr.classList.add("sel");
+    const dots = el("span", { class: x.score >= 3 ? "check" : x.score === 2 ? "pos" : "dim", text: `${"●".repeat(x.score)}${"○".repeat(Math.max(0, 4 - x.score))} ${x.score}` });
+    const chips = el("span", {}, ...x.signals.map((s) => el("span", {
+      class: `as-pill ${s.kind === "atr_blink" ? "buy blink" : s.kind === "atr_buy" ? "buy" : ""}`,
+      style: s.kind.startsWith("atr") ? "margin-right:4px" : "margin-right:4px;background:var(--accent);color:#fff",
+      title: EA_HELP[s.kind] || "", text: `${EA_ICON[s.kind] || ""} ${s.label} · ${eaAgo(s.time)}`,
+    })));
+    tr.append(el("td", {}, symNode(x.symbol)), el("td", {}, dots), el("td", {}, chips),
+      el("td", { text: eaAgo(x.first) }), el("td", {}, changeNode(x.since_first)), el("td", { text: x.price ? fmtPrice(x.price) : "—" }));
+    tr.addEventListener("click", () => showEarly(x));
+    frag.append(tr);
+  }
+  $("eaBody").replaceChildren(frag);
+}
+
+async function showEarly(x) {
+  ea.sel = x.symbol;
+  renderEarly();
+  showDetail();
+  $("dTitle").replaceChildren(base(x.symbol), el("span", { class: "q", text: "/USDT" }));
+  $("dPill").textContent = `Early entry · ${x.score} signal${x.score === 1 ? "" : "s"}: ${x.signals.map((s) => s.label).join(", ")}`;
+  $("dFocus").hidden = true;
+  $("dTrade").href = tradeUrl(x.symbol);
+  $("dStats").replaceChildren(...x.signals.map((s) => el("div", { class: "stat" }, el("div", { class: "label", text: s.label }),
+    el("div", { class: "value" }, eaAgo(s.time), el("small", { text: ` · ${EA_HELP[s.kind] || ""}` })))));
+  loadFutures(x.symbol);
+  await drawSymbol(x.symbol);
+}
+
+$("eaMin").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  ea.min = Number(b.dataset.v);
+  $("eaMin").querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(y === b)));
+  renderEarly();
+});
+$("eaMin").querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(Number(y.dataset.v) === ea.min)));
+setInterval(() => { if (state.view === "early") loadEarly(); }, 30000);
 
 // ------------------------------------------------------------------ carry tab (spot long + perp short, collect funding)
 const cy = { data: null, minVol: 5e6, spotOnly: true, sel: null, capital: 1000, lev: 1, quote: null };
@@ -4517,7 +4649,7 @@ setInterval(renderClock, 1000);
 
 // ------------------------------------------------------------------ boot
 (async () => {
-  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal", "#radar": "radar", "#carry": "carry", "#atr": "atr", "#market": "market" }[location.hash] || "pumps";
+  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal", "#radar": "radar", "#carry": "carry", "#atr": "atr", "#market": "market", "#early": "early" }[location.hash] || "pumps";
   state.view = startView;
   document.body.classList.add(`view-${state.view}`);
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === startView)));

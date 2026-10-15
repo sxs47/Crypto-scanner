@@ -29,6 +29,8 @@ DEFAULTS = {
     "prepump": "squeeze",               # pre-pump watch: "off", "squeeze" (low long/short ratio only), "all"
     "blowoff": "off",                   # blow-off short setups: "off", "weak" (weak altcoin market only), "all"
     "radar": "off",                     # big-move radar picks: "off", "all"
+    "early": "2",                       # early entries: "off", "2" or "3" signals lining up on one coin
+    "atr": "confirmed",                 # ATR_SM 4h Buy: "off", "confirmed" (candle closed), "all" (also blinking)
 }
 
 _q = queue.Queue()
@@ -115,6 +117,58 @@ def format_radar(picks, record):
     if record and record.get("n"):
         lines.append(f"<i>Since the model's cut-off: {record['hit30'] * 100:.0f}% of picks touched +30% within 24h, "
                      f"but {record['drop15'] * 100:.0f}% dropped −15%. Up OR down — not a buy signal.</i>")
+    return "\n".join(lines)
+
+
+def atr_mode():
+    cfg = config()
+    if not cfg or not cfg["enabled"] or cfg.get("atr", "off") == "off":
+        return None
+    return cfg["atr"]
+
+
+def format_atr(items, btc4h):
+    conf = [x for x in items if x["status"] == "confirmed"]
+    blink = [x for x in items if x["status"] == "blinking"]
+    lines = []
+    for title, group in (("▲ <b>ATR Buy · 4h confirmed</b>", conf), ("◌ <b>ATR Buy blinking · 4h candle still open</b>", blink)):
+        if not group:
+            continue
+        lines.append(title + (f" · {len(group)}" if len(group) > 1 else ""))
+        for x in group[:12]:
+            base = x["symbol"].removesuffix("USDT")
+            h1 = {1: "1h Buy ✓", -1: "1h Sell ✗"}.get(x.get("h1"), "1h —")
+            line = (x["price"] - x["line"]) / x["price"]
+            lines.append(f"<b>{_h(base)}</b>/USDT · price {x['price']:.6g} · ATR line −{line * 100:.0f}% · {h1} · "
+                         f"<a href=\"{exchange.trade_url(x['symbol'])}\">chart</a>")
+        if len(group) > 12:
+            lines.append(f"…and {len(group) - 12} more in the ATR tab")
+    if btc4h:
+        weak = btc4h["score"] <= 2
+        lines.append(f"BTC 4h: {'bearish ⚠️ alts fall harder, use smaller size' if weak else 'ok'} ({btc4h['score']}/{btc4h['score_max']})")
+    lines.append("<i>Blinking: about half fade before the close. Use your own stop (~−5%), the ATR line is far. Not advice.</i>")
+    return "\n".join(lines)
+
+
+def early_threshold():
+    cfg = config()
+    if not cfg or not cfg["enabled"] or cfg.get("early", "off") == "off":
+        return 0
+    return int(cfg["early"])
+
+
+def format_early(boards, btc4h):
+    lines = ["🚀 <b>Early entry</b>" + (f" · {len(boards)} coins" if len(boards) > 1 else "")]
+    for b in boards[:10]:
+        base = b["symbol"].removesuffix("USDT")
+        sig = ", ".join(x["label"] for x in b["signals"])
+        price = f" · price {b['price']:.6g}" if b.get("price") else ""
+        lines.append(f"<b>{_h(base)}</b>/USDT · {b['score']} signals: {_h(sig)}{price} · "
+                     f"<a href=\"{exchange.trade_url(b['symbol'])}\">chart</a>")
+    if btc4h:
+        weak = btc4h["score"] <= 2
+        lines.append(f"BTC 4h: {'bearish ⚠️ alts fall harder, use smaller size' if weak else 'ok'} ({btc4h['score']}/{btc4h['score_max']})")
+    lines.append("<i>Blinking = 4h candle not closed yet (about half fade). Use your own stop (~−5%). Not advice.</i>")
     return "\n".join(lines)
 
 
