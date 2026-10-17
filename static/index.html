@@ -466,7 +466,7 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       Pump Scanner
     </div>
     <nav class="seg nav" id="nav" aria-label="View">
-      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="early">Early</button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button><button data-view="radar">Radar</button><button data-view="carry">Carry</button><button data-view="atr">ATR</button><button data-view="market">Market</button>
+      <button data-view="pumps">Pumps</button><button data-view="signals">Signals</button><button data-view="alerts">Alerts<span class="nav-count" id="navCount" hidden></span></button><button data-view="early">Early</button><button data-view="trend">Trend</button><button data-view="planner">Planner</button><button data-view="journal">Journal</button><button data-view="radar">Radar</button><button data-view="carry">Carry</button><button data-view="atr">ATR</button><button data-view="market">Market</button><button data-view="paper">Paper</button>
     </nav>
     <div class="meta" id="meta">Loading…</div>
     <div class="spacer"></div>
@@ -1038,6 +1038,16 @@ tr.fresh { animation: flash 2.4s ease-out 1; }
       <p class="pp-note">Market caps from CoinMarketCap (when its key is saved) or CoinGecko, Fear &amp; Greed from alternative.me, positioning from Bybit. From our tests: crowded longs and positive funding lean slightly down, crowded shorts and negative funding lean up; BTC above its EMA 200 made ATR_SM Buys a little better. Not advice.</p>
     </div>
   </section>
+ </div>
+
+ <div id="viewPaper" hidden>
+  <div class="warn info" role="note">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <div id="paNote">Fake money only. Two $500 accounts follow fixed rules on live Bybit prices so we can judge them forward, without risk. Fees included, funding not. Runs only while the app runs.</div>
+  </div>
+  <section class="kpis" id="paKpis"></section>
+  <section style="display: grid; gap: 16px; margin-top: 16px" id="paCards"></section>
+  <div class="sig-toolbar" style="margin-top: 12px"><button class="btn" id="paReset" type="button">Reset both accounts to $500</button><span class="meta" id="paStatus"></span></div>
  </div>
 
  <div id="viewJournal" hidden>
@@ -2261,7 +2271,7 @@ $("trainBtn").addEventListener("click", async () => {
 function setView(v) {
   const navKey = v;
   state.view = v;
-  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal", "view-radar", "view-carry", "view-atr", "view-market", "view-early");
+  document.body.classList.remove("view-pumps", "view-signals", "view-alerts", "view-trend", "view-planner", "view-journal", "view-radar", "view-carry", "view-atr", "view-market", "view-early", "view-paper");
   document.body.classList.add(`view-${v}`);
   $("viewPumps").hidden = v !== "pumps";
   $("viewSignals").hidden = v !== "signals";
@@ -2274,6 +2284,7 @@ function setView(v) {
   $("viewAtr").hidden = v !== "atr";
   $("viewMarket").hidden = v !== "market";
   $("viewEarly").hidden = v !== "early";
+  $("viewPaper").hidden = v !== "paper";
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === navKey)));
   // One chart instance, moved between the views
   const slot = { pumps: document.querySelector("#viewPumps .main"), signals: $("sigDetailSlot"), alerts: $("alDetailSlot"), trend: $("trDetailSlot"), radar: $("rdDetailSlot"), atr: $("asDetailSlot"), early: $("eaDetailSlot") }[v];
@@ -2304,6 +2315,8 @@ function setView(v) {
     loadMarket();
   } else if (v === "early") {
     loadEarly();
+  } else if (v === "paper") {
+    loadPaper();
   } else if (v === "alerts") {
     al.unseen = 0;
     updateBadge();
@@ -2325,6 +2338,7 @@ function refreshDetail() {
   if (state.view === "carry") return;
   if (state.view === "atr") { if (ax.sel) showAs(ax.sel); return; }
   if (state.view === "market") return;
+  if (state.view === "paper") return;
   if (state.view === "early") { if (ea.sel && ea.data) { const x = (ea.data.board || []).find((b) => b.symbol === ea.sel); if (x) showEarly(x); } return; }
   if (state.view === "trend") { if (tr.report) renderTrend(); if (tr.sel) showTrendCoin(tr.sel, false); }
   else if (state.view === "alerts") { if (at.sel) showAtr(at.sel); else if (bo.sel) showBlowoff(bo.sel, false, false); else if (pp.sel) showPrepump(pp.sel, false); else if (al.sel) showAlert(al.sel, false); }
@@ -4121,6 +4135,20 @@ const leadNode = (rel) => rel == null ? el("span", { class: "dim", title: "No By
   : rel > 1.25 ? el("span", { class: "pos", title: `Spot share ${rel.toFixed(2)}× normal — real buyers on spot`, text: "spot-led" })
   : el("span", { class: "dim", title: `Spot share ${rel.toFixed(2)}× normal`, text: "normal" });
 
+const unlockNode = (u) => !u ? null : el("span", {
+  class: "negt", style: "margin-left:6px",
+  title: `One-time token unlock of ${(u.pct * 100).toFixed(0)}% of the circulating supply (${(u.who || []).join(", ")}). Tested: small drag, about −2% in the week before big unlocks.`,
+  text: `🔓 ${(u.pct * 100).toFixed(0)}% in ${Math.max(0, Math.round((u.time - Date.now() / 1000) / 86400))}d`,
+});
+const ranNode = (r) => r == null || r <= 0.25 ? null : el("span", {
+  class: "negt", style: "margin-left:6px",
+  title: "Already up more than 25% in the 24h before the signal — in tests such ATR Buys did badly (2025-26: 3-day return −4.5%). Up to +25% was fine.",
+  text: `⚠️ +${(r * 100).toFixed(0)}% 24h · skip`,
+});
+const marketWeakText = (m) => m && m.weak
+  ? `⚠️ Market weak: BTC is below its 4h EMA50 and only ${Math.round(m.breadth * 100)}% of coins are above their 4h EMA50 (a week ago ${Math.round(m.breadth_7d * 100)}%). ATR Buys taken in such periods did clearly worse in tests — skip, or use a small size. `
+  : "";
+
 // ------------------------------------------------------------------ ATR tab (ATR_SM 4h Buy/Sell: blinking + confirmed)
 const ax = { data: null, sel: null, side: "all", days: 1 };
 const asWhen = (x) => {
@@ -4133,7 +4161,7 @@ const AS_COLS = [
       ? el("span", { title: "The 4h candle is still open — the signal disappears if price goes back over the line before the close", text: `blinking · closes ${fmtClock(x.closes).slice(0, 5)}` })
       : el("span", { class: "check", text: "confirmed ✓" }) },
   { label: () => `Time (${tzShort()})`, cell: (x) => x.status === "blinking" ? el("span", { class: "dim", text: "now" }) : el("span", { text: asWhen(x) }) },
-  { label: "Coin", cell: (x) => symNode(x.symbol) },
+  { label: "Coin", cell: (x) => el("span", {}, symNode(x.symbol), unlockNode(x.unlock), x.side === "buy" ? ranNode(x.ran24) : null) },
   { label: "1h ATR", cell: (x) => x.status !== "blinking" || x.h1 == null ? el("span", { class: "dim", text: "—" })
       : el("span", { class: x.h1 === (x.side === "buy" ? 1 : -1) ? "check" : "negt", title: "ATR_SM 5/5 on the last closed 1h candle", text: x.h1 === 1 ? "Buy" : "Sell" }) },
   { label: "Spot / futures", cell: (x) => leadNode(x.lead) },
@@ -4160,7 +4188,7 @@ function renderAs() {
     $("asBody").replaceChildren();
     return;
   }
-  $("asNote").textContent = `ATR_SM_BuySell, Period ${d.settings.period} / Multiplier ${d.settings.mult}, 4h candles, all ${d.coins} Bybit USDT perpetuals (no volume minimum). `
+  $("asNote").textContent = marketWeakText(d.market) + `ATR_SM_BuySell, Period ${d.settings.period} / Multiplier ${d.settings.mult}, 4h candles, all ${d.coins} Bybit USDT perpetuals (no volume minimum). `
     + "Blinking = the open candle would flip at the current price (can still disappear). Confirmed = the candle closed with the flip. Not advice.";
   const items = (d.items || []).filter((x) => ax.side === "all" || x.side === ax.side);
   const blink = items.filter((x) => x.status === "blinking").length;
@@ -4325,9 +4353,10 @@ function renderEarly() {
   }
   const b = d.btc;
   const tfTxt = (k) => b && b[k] ? `${k === "1d" ? "Daily" : k} ${b[k].score}/${b[k].score_max}` : "";
-  const weak = b && b["4h"] && b["4h"].score <= 2;
+  const weak = (b && b["4h"] && b["4h"].score <= 2) || (d.market && d.market.weak);
   $("eaBtc").className = `warn ${weak ? "" : "info"}`;
   $("eaBtcText").replaceChildren(
+    d.market && d.market.weak ? el("b", { text: marketWeakText(d.market) }) :
     el("b", { text: weak ? "BTC is weak on 4h — altcoins fall harder now: fewer trades, smaller size, tight stops. " : "BTC is not weak on 4h. " }),
     `BTC trend score: ${[tfTxt("1d"), tfTxt("4h"), tfTxt("1h")].filter(Boolean).join(" · ")} (7/7 = all bullish).`,
   );
@@ -4350,7 +4379,7 @@ function renderEarly() {
       style: s.kind.startsWith("atr") ? "margin-right:4px" : "margin-right:4px;background:var(--accent);color:#fff",
       title: EA_HELP[s.kind] || "", text: `${EA_ICON[s.kind] || ""} ${s.label} · ${eaAgo(s.time)}`,
     })));
-    tr.append(el("td", {}, symNode(x.symbol)), el("td", {}, dots), el("td", {}, chips), el("td", {}, leadNode(x.lead)),
+    tr.append(el("td", {}, symNode(x.symbol), unlockNode(x.unlock), ranNode(x.ran24)), el("td", {}, dots), el("td", {}, chips), el("td", {}, leadNode(x.lead)),
       el("td", { text: eaAgo(x.first) }), el("td", {}, changeNode(x.since_first)), el("td", { text: x.price ? fmtPrice(x.price) : "—" }));
     tr.addEventListener("click", () => showEarly(x));
     frag.append(tr);
@@ -4381,6 +4410,77 @@ $("eaMin").addEventListener("click", (e) => {
 });
 $("eaMin").querySelectorAll("button").forEach((y) => y.setAttribute("aria-pressed", String(Number(y.dataset.v) === ea.min)));
 setInterval(() => { if (state.view === "early") loadEarly(); }, 30000);
+
+// ------------------------------------------------------------------ paper trading tab (two fake $500 accounts)
+const pa = { data: null };
+const usd = (v) => v == null ? "—" : `${v < 0 ? "−" : ""}$${Math.abs(v).toFixed(2)}`;
+const usdNode = (v) => el("span", { class: v == null ? "dim" : v >= 0 ? "pos" : "negt", text: v == null ? "—" : `${v >= 0 ? "+" : ""}${usd(v)}` });
+const agoH = (t) => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 60 ? `${m}m` : `${(m / 60).toFixed(1)}h`; };
+
+async function loadPaper() {
+  let d;
+  try { d = await (await fetch("/api/paper")).json(); } catch { return; }
+  pa.data = d;
+  renderPaper();
+}
+
+function renderPaper() {
+  const d = pa.data;
+  if (!d) return;
+  const A = d.accounts;
+  const kp = [];
+  for (const k of ["plan", "fast"]) {
+    const a = A[k];
+    if (!a) continue;
+    const pnl = a.equity - a.start;
+    kp.push(kpi(a.name, `$${a.equity.toFixed(2)}`, `${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(2)} (${signed(pnl / a.start)}) since ${fmtDate(a.started_at)} · ${a.trades} closed trades${a.win_rate != null ? ` · ${pctf(a.win_rate, 0)} won` : ""}`, { hero: k === "plan" }));
+  }
+  $("paKpis").replaceChildren(...kp);
+  const cards = [];
+  for (const k of ["plan", "fast"]) {
+    const a = A[k];
+    if (!a) continue;
+    const r = a.rules;
+    const rulesTxt = k === "plan"
+      ? `Confirmed ATR 4h Buys (checks: not +25%, not futures-led, no big unlock, ≥ $20M/day; market-weak check off) · ${Math.round(r.margin * 100)}% margin, ${r.lev}x · stop −${r.stop * 100}% · half at +${r.tp1 * 100}% then break-even · rest +${r.tp2 * 100}% · max ${r.max_h}h`
+      : `15m EMA7 crosses above EMA21/50/200 (coins ≥ $5M/day) · ${Math.round(r.margin * 100)}% margin, ${r.lev}x · stop −${r.stop * 100}% · exit EMA7 < EMA21 or +${r.tp2 * 100}% · max ${r.max_h}h`;
+    const stats = [
+      ["Equity", `$${a.equity.toFixed(2)}`, `start $${a.start.toFixed(0)}`],
+      ["Closed trades", String(a.trades), a.win_rate != null ? `${pctf(a.win_rate, 0)} won` : ""],
+      ["Avg win / loss", `${usd(a.avg_win)} / ${usd(a.avg_loss)}`, ""],
+      ["Worst drop", a.trades ? signed(a.max_drawdown) : "—", "from closed trades"],
+    ];
+    const openRows = a.open.length ? a.open.map((p) => el("tr", {},
+      el("td", {}, symNode(p.symbol)), el("td", { text: fmtPrice(p.entry) }), el("td", { text: p.now ? fmtPrice(p.now) : "—" }),
+      el("td", {}, usdNode(p.pnl_now)), el("td", { text: fmtPrice(p.stop) + (p.half_done ? " (BE)" : "") }), el("td", { text: agoH(p.opened) })))
+      : [el("tr", {}, el("td", { colspan: 6, class: "empty", text: "No open trades." }))];
+    const closedRows = a.closed.length ? a.closed.map((t) => el("tr", {},
+      el("td", {}, symNode(t.symbol)), el("td", { text: fmtDate(t.closed) }), el("td", { text: `${fmtPrice(t.entry)} → ${fmtPrice(t.exit)}` }),
+      el("td", {}, usdNode(t.pnl)), el("td", {}, changeNode(t.pnl_pct_margin)), el("td", { class: "dim", text: t.why })))
+      : [el("tr", {}, el("td", { colspan: 6, class: "empty", text: "No closed trades yet." }))];
+    cards.push(el("div", { class: "card" },
+      el("div", { class: "card-h" }, el("h2", { text: a.name }), el("span", { class: "sub", text: `${a.open.length} open` })),
+      el("p", { class: "pp-note", text: rulesTxt }),
+      el("div", { class: "stats" }, ...stats.map(([l, v, sub]) => el("div", { class: "stat" }, el("div", { class: "label", text: l }),
+        el("div", { class: "value" }, v, sub ? el("small", { text: ` · ${sub}` }) : null)))),
+      el("div", { class: "table-scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, ...["Open", "Entry", "Now", "P&L", "Stop", "Age"].map((x) => el("th", { text: x })))),
+        el("tbody", {}, ...openRows))),
+      el("div", { class: "table-scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, ...["Closed", "When", "Entry → exit", "P&L", "On margin", "Why"].map((x) => el("th", { text: x })))),
+        el("tbody", {}, ...closedRows)))));
+  }
+  $("paCards").replaceChildren(...cards);
+  const m = d.market;
+  $("paStatus").textContent = `updated ${fmtClock(d.now).slice(0, 5)}` + (m && m.weak ? " · market weak (ignored in this test)" : "");
+}
+
+$("paReset").addEventListener("click", async () => {
+  if (!confirm("Reset both paper accounts to $500 and delete their trade history?")) return;
+  await fetch("/api/paper/reset", { method: "POST" });
+  loadPaper();
+});
+setInterval(() => { if (state.view === "paper") loadPaper(); }, 30000);
 
 // ------------------------------------------------------------------ carry tab (spot long + perp short, collect funding)
 const cy = { data: null, minVol: 5e6, spotOnly: true, sel: null, capital: 1000, lev: 1, quote: null };
@@ -4656,7 +4756,7 @@ setInterval(renderClock, 1000);
 
 // ------------------------------------------------------------------ boot
 (async () => {
-  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal", "#radar": "radar", "#carry": "carry", "#atr": "atr", "#market": "market", "#early": "early" }[location.hash] || "pumps";
+  const startView = { "#signals": "signals", "#alerts": "alerts", "#trend": "trend", "#bybit": "alerts", "#planner": "planner", "#journal": "journal", "#radar": "radar", "#carry": "carry", "#atr": "atr", "#market": "market", "#early": "early", "#paper": "paper" }[location.hash] || "pumps";
   state.view = startView;
   document.body.classList.add(`view-${state.view}`);
   document.querySelectorAll("#nav button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === startView)));

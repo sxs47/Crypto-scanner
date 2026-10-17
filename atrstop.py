@@ -102,6 +102,7 @@ def signals(symbols, days=7):
     now = pd.Timestamp.now(tz="UTC")
     since = now - pd.Timedelta(days=days)
     items, states = [], {}
+    above_now, above_7d = [], []
     for s in sorted(symbols):
         try:
             k = radar.load(s)
@@ -109,9 +110,13 @@ def signals(symbols, days=7):
                 continue
             k = k.ffill()
             c, h, l = (k[x].to_numpy() for x in ("c", "h", "l"))
+            if len(c) >= 120:                       # market breadth: share of coins above their 4h EMA50, now and 7 days ago
+                e50 = pd.Series(c).ewm(span=50, adjust=False).mean().to_numpy()
+                above_now.append(c[-1] > e50[-1])
+                above_7d.append(c[-43] > e50[-43])
             trail, pos = trail_pos(c, h, l)
             states[s] = {"line": float(trail[-1]), "close": float(c[-1]), "pos": int(pos[-1]),
-                         "bar_close": int((k.index[-1] + H4).timestamp())}
+                         "bar_close": int((k.index[-1] + H4).timestamp()), "close_24h_ago": float(c[-6])}
             for i in range(max(1, len(c) - days * 6 - 1), len(c)):
                 if pos[i] != pos[i - 1] and pos[i] != 0:
                     close_t = k.index[i] + H4
@@ -119,10 +124,27 @@ def signals(symbols, days=7):
                         continue
                     items.append({"id": f"{s}|{int(close_t.timestamp())}", "symbol": s, "side": "buy" if pos[i] == 1 else "sell",
                                   "time": int(close_t.timestamp()) - 900, "price": float(c[i]), "line": float(trail[i]),
-                                  "now": float(c[-1] / c[i] - 1), "current": bool(pos[-1] == pos[i])})
+                                  "now": float(c[-1] / c[i] - 1), "current": bool(pos[-1] == pos[i]),
+                                  "ran24": float(c[i] / c[i - 6] - 1) if i >= 6 else None})
         except Exception as e:
             print(f"atr signals {s}: {e}")
-    return {"items": items, "states": states, "built": time.time()}
+    return {"items": items, "states": states, "built": time.time(), "market": market_state(above_now, above_7d)}
+
+
+def market_state(above_now, above_7d):
+    """'Weak market': BTC below its 4h EMA50 AND fewer coins above their EMA50 than 7 days ago. In tests (10,829 ATR
+    Buys, 2023-26) Buys taken then did clearly worse: +5/-3 26-32% vs 34-38%, 3-day return -2.2% in 2025-26."""
+    out = {"breadth": float(np.mean(above_now)) if above_now else None,
+           "breadth_7d": float(np.mean(above_7d)) if above_7d else None, "btc_vs_ema50": None, "weak": False}
+    try:
+        b = radar.load("BTCUSDT").ffill()
+        e50 = b["c"].ewm(span=50, adjust=False).mean()
+        out["btc_vs_ema50"] = float(b["c"].iloc[-1] / e50.iloc[-1] - 1)
+    except Exception as e:
+        print(f"market state: {e}")
+    if out["breadth"] is not None and out["btc_vs_ema50"] is not None:
+        out["weak"] = bool(out["btc_vs_ema50"] < 0 and out["breadth"] <= out["breadth_7d"])
+    return out
 
 
 def scan(symbols, days=60):

@@ -37,6 +37,8 @@ import prepump
 import radar
 import runpicks
 import spotflow
+import unlocks
+import paper
 
 import exchange
 import futures
@@ -515,6 +517,12 @@ def _live_loop():
         cd = carry.data()["data"]
         if cd and time.time() - cd["built"] > 3600 and not carry.data()["running"]:
             threading.Thread(target=carry.refresh, daemon=True).start()
+        if time.time() - _unlock_check[0] > 3600:
+            _unlock_check[0] = time.time()
+            threading.Thread(target=lambda: _safe_call(unlocks.refresh), daemon=True).start()
+        if time.time() - _paper_check[0] > 30:
+            _paper_check[0] = time.time()
+            threading.Thread(target=lambda: _safe_call(paper_tick), daemon=True).start()
         if time.time() - _early_check[0] > 60:
             _early_check[0] = time.time()
             threading.Thread(target=lambda: (_safe_call(check_early), _safe_call(check_atr)), daemon=True).start()
@@ -809,6 +817,8 @@ def api_atr():
 
 _mkt_saved = [0.0]
 _early_check = [0.0]
+_paper_check = [0.0]
+_unlock_check = [0.0]
 
 
 def _safe_call(fn, *a):
@@ -826,7 +836,7 @@ def api_market():
     return jsonify(market.overview(sym))
 
 
-_all_ticks = {"at": 0.0, "px": {}}
+_all_ticks = {"at": 0.0, "px": {}, "turn": {}}
 
 
 def all_prices():
@@ -834,7 +844,8 @@ def all_prices():
     if time.time() - _all_ticks["at"] > 20:
         try:
             lst = exchange.get("/v5/market/tickers", {"category": "linear"})["list"]
-            _all_ticks.update(at=time.time(), px={t["symbol"]: float(t["lastPrice"]) for t in lst if t.get("lastPrice")})
+            _all_ticks.update(at=time.time(), px={t["symbol"]: float(t["lastPrice"]) for t in lst if t.get("lastPrice")},
+                              turn={t["symbol"]: float(t.get("turnover24h") or 0) for t in lst})
         except Exception as e:
             print(f"tickers: {e}")
     return _all_ticks["px"]
@@ -852,7 +863,7 @@ def atr_items(days):
     for x in a["items"]:
         if x["time"] < cutoff:
             continue
-        x = dict(x, status="confirmed", lead=_rd.get("lead", {}).get(x["symbol"]))
+        x = dict(x, status="confirmed", lead=_rd.get("lead", {}).get(x["symbol"]), unlock=unlocks.next_big(x["symbol"]))
         if px.get(x["symbol"]):
             x["now"] = px[x["symbol"]] / x["price"] - 1
         items.append(x)
@@ -864,7 +875,8 @@ def atr_items(days):
         if side:
             items.append({"id": f"{s}|live", "symbol": s, "side": side, "status": "blinking", "time": int(time.time()) - 60,
                           "price": p, "line": st["line"], "now": 0.0, "current": True, "closes": bar_open + 14400,
-                          "lead": _rd.get("lead", {}).get(s)})
+                          "lead": _rd.get("lead", {}).get(s), "unlock": unlocks.next_big(s),
+                          "ran24": p / st["close_24h_ago"] - 1 if st.get("close_24h_ago") else None})
     return items
 
 
@@ -915,6 +927,8 @@ def early_board():
             add(x["symbol"], "atr_blink", now, x["price"], "ATR Buy blinking")
         elif x["current"]:
             add(x["symbol"], "atr_buy", x["time"] + 900, x["price"], "ATR Buy")
+        if x.get("ran24") is not None and x["symbol"] in board:
+            board[x["symbol"]]["ran24"] = x["ran24"]
     rr = _rd.get("runs")
     if rr:
         for p in rr["picks"]:
@@ -934,6 +948,7 @@ def early_board():
         b["score"] = len(kinds - {"atr_blink"}) + (1 if "atr_blink" in kinds and "atr_buy" not in kinds else 0)
         b["price"] = px.get(b["symbol"])
         b["lead"] = _rd.get("lead", {}).get(b["symbol"])
+        b["unlock"] = unlocks.next_big(b["symbol"])
         b["since_first"] = (b["price"] / b["first_price"] - 1) if b["price"] and b["first_price"] else None
         b["signals"].sort(key=lambda x: x["time"])
         out.append(b)
@@ -972,7 +987,7 @@ def check_atr():
         btc = market.overview("BTCUSDT")["tf"].get("4h")
     except Exception:
         pass
-    notify.send(notify.format_atr(new, btc))
+    notify.send(notify.format_atr(new, btc, (_rd.get("atrsig") or {}).get("market")))
 
 
 def check_early():
@@ -998,7 +1013,62 @@ def check_early():
         btc = market.overview("BTCUSDT")["tf"].get("4h")
     except Exception:
         pass
-    notify.send(notify.format_early(new, btc))
+    notify.send(notify.format_early(new, btc, (_rd.get("atrsig") or {}).get("market")))
+
+
+_paper = {"slot": None}
+
+
+def paper_tick():
+    """Paper accounts: plan = filtered confirmed ATR 4h Buys; fast = 15m EMA crosses (once per 15m candle)."""
+    px = all_prices()
+    turn = _all_ticks.get("turn", {})
+    if not px:
+        return
+    cands = []
+    if True:                                   # the user chose to ignore the "market weak" check in this test
+        for x in atr_items(0.1):
+            if x["side"] != "buy" or x["status"] != "confirmed" or time.time() - (x["time"] + 900) > 3600:
+                continue
+            if (x.get("ran24") or 0) > 0.25 or (x.get("lead") is not None and x["lead"] < 0.8) or x.get("unlock"):
+                continue
+            if turn.get(x["symbol"], 0) < 20e6:
+                continue
+            cands.append((x["id"], x["symbol"], x["price"], "ATR 4h Buy (all checks ok)"))
+    slot = int(time.time() // 900)
+    fast_due = slot != _paper["slot"] and time.time() - slot * 900 > 240     # after the 15m scan has stored the candle
+    if fast_due:
+        _paper["slot"] = slot
+    paper.tick(px, turn, cands, sorted(scanner.tracked_symbols()), fast_due, lambda s, p: entry_context(s, p, turn))
+
+
+def entry_context(sym, price, turn):
+    """Conditions at a paper entry, saved with the trade so winners and losers can be compared later."""
+    a = _rd.get("atrsig") or {}
+    m = a.get("market") or {}
+    st = (a.get("states") or {}).get(sym) or {}
+    ago = st.get("close_24h_ago")
+    u = unlocks.next_big(sym)
+    return {"market_weak": m.get("weak"), "breadth": m.get("breadth"), "btc_vs_ema50_4h": m.get("btc_vs_ema50"),
+            "ran24": (price / ago - 1) if ago else None, "spot_vs_normal": _rd.get("lead", {}).get(sym),
+            "turnover24": turn.get(sym), "atr4h_buy": st.get("pos") == 1 if st else None,
+            "unlock_pct": u["pct"] if u else None, "hour_utc": time.gmtime().tm_hour}
+
+
+@app.get("/api/paper")
+def api_paper():
+    out = paper.summary(all_prices())
+    for acc in out.values():
+        for k in ("equity", "cash", "avg_win", "avg_loss", "max_drawdown", "win_rate"):
+            acc[k] = clean(acc[k]) if isinstance(acc[k], float) else acc[k]
+    market = (_rd.get("atrsig") or {}).get("market")
+    return jsonify({"accounts": out, "market": market, "now": time.time()})
+
+
+@app.post("/api/paper/reset")
+def api_paper_reset():
+    paper.reset()
+    return jsonify({"ok": True})
 
 
 @app.get("/api/early")
@@ -1014,7 +1084,8 @@ def api_early():
     except Exception as e:
         print(f"early btc: {e}")
     rec = (_rd.get("atr") or {}).get("record")
-    return jsonify({"ready": True, "board": board, "btc": btc, "atr_record": rec, "now": time.time()})
+    return jsonify({"ready": True, "board": board, "btc": btc, "atr_record": rec, "now": time.time(),
+                    "market": (_rd.get("atrsig") or {}).get("market")})
 
 
 @app.get("/api/atr_signals")
@@ -1032,6 +1103,7 @@ def api_atr_signals():
     items = [{k: clean(v) if isinstance(v, float) else v for k, v in x.items()} for x in items]
     items.sort(key=lambda x: (x["status"] != "blinking", -x["time"]))
     return jsonify({"ready": True, "items": items, "coins": len(a["states"]), "built": a["built"], "next_close": bar_open + 14400,
+                    "market": a.get("market"),
                     "settings": {"period": atrstop.PERIOD, "mult": atrstop.MULT}})
 
 
@@ -1320,6 +1392,9 @@ if __name__ == "__main__":
     print(f"Open http://{shown}:{args.port}" + ("  (login required)" if auth.enabled() else ""))
     try:
         from waitress import serve  # production server, if installed
-        serve(app, host=args.host, port=args.port, threads=8)
+        if args.host == "127.0.0.1":     # local only: answer on IPv4 and IPv6 loopback ("localhost" can mean either)
+            serve(app, listen=f"127.0.0.1:{args.port} [::1]:{args.port}", threads=8)
+        else:
+            serve(app, host=args.host, port=args.port, threads=8)
     except ImportError:
         app.run(host=args.host, port=args.port, debug=False, threaded=True)

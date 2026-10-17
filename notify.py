@@ -121,6 +121,20 @@ def format_radar(picks, record):
     return "\n".join(lines)
 
 
+def _unlock_txt(u):
+    if not u:
+        return ""
+    days = max(0, round((u["time"] - time.time()) / 86400))
+    return f" · 🔓 unlock {u['pct'] * 100:.0f}% in {days}d"
+
+
+RAN_SKIP = 0.25      # ATR Buys after > +25% in 24h did badly in tests (2025-26: 3-day return -4.5%)
+
+
+def _ran_txt(r):
+    return f" · ⚠️ already +{r * 100:.0f}% in 24h — skip" if r is not None and r > RAN_SKIP else ""
+
+
 def atr_mode():
     cfg = config()
     if not cfg or not cfg["enabled"] or cfg.get("atr", "off") == "off":
@@ -128,7 +142,7 @@ def atr_mode():
     return cfg["atr"]
 
 
-def format_atr(items, btc4h):
+def format_atr(items, btc4h, market=None):
     conf = [x for x in items if x["status"] == "confirmed"]
     blink = [x for x in items if x["status"] == "blinking"]
     lines = []
@@ -141,10 +155,14 @@ def format_atr(items, btc4h):
             h1 = {1: "1h Buy ✓", -1: "1h Sell ✗"}.get(x.get("h1"), "1h —")
             line = (x["price"] - x["line"]) / x["price"]
             fl = " · ⚠️ futures-led" if spotflow.label(x.get("lead")) == "futures" else ""
+            fl += _unlock_txt(x.get("unlock")) + _ran_txt(x.get("ran24"))
             lines.append(f"<b>{_h(base)}</b>/USDT · price {x['price']:.6g} · ATR line −{line * 100:.0f}% · {h1}{fl} · "
                          f"<a href=\"{exchange.trade_url(x['symbol'])}\">chart</a>")
         if len(group) > 12:
             lines.append(f"…and {len(group) - 12} more in the ATR tab")
+    if market and market.get("weak"):
+        lines.append("⚠️ <b>Market weak</b>: BTC below its 4h EMA50 and fewer coins rising than a week ago — "
+                     "Buys did clearly worse in such periods. Skip or use a small size.")
     if btc4h:
         weak = btc4h["score"] <= 2
         lines.append(f"BTC 4h: {'bearish ⚠️ alts fall harder, use smaller size' if weak else 'ok'} ({btc4h['score']}/{btc4h['score_max']})")
@@ -159,15 +177,19 @@ def early_threshold():
     return int(cfg["early"])
 
 
-def format_early(boards, btc4h):
+def format_early(boards, btc4h, market=None):
     lines = ["🚀 <b>Early entry</b>" + (f" · {len(boards)} coins" if len(boards) > 1 else "")]
     for b in boards[:10]:
         base = b["symbol"].removesuffix("USDT")
         sig = ", ".join(x["label"] for x in b["signals"])
         price = f" · price {b['price']:.6g}" if b.get("price") else ""
         fl = " · ⚠️ futures-led" if spotflow.label(b.get("lead")) == "futures" else ""
+        fl += _unlock_txt(b.get("unlock")) + _ran_txt(b.get("ran24"))
         lines.append(f"<b>{_h(base)}</b>/USDT · {b['score']} signals: {_h(sig)}{price}{fl} · "
                      f"<a href=\"{exchange.trade_url(b['symbol'])}\">chart</a>")
+    if market and market.get("weak"):
+        lines.append("⚠️ <b>Market weak</b>: BTC below its 4h EMA50 and fewer coins rising than a week ago — "
+                     "Buys did clearly worse in such periods. Skip or use a small size.")
     if btc4h:
         weak = btc4h["score"] <= 2
         lines.append(f"BTC 4h: {'bearish ⚠️ alts fall harder, use smaller size' if weak else 'ok'} ({btc4h['score']}/{btc4h['score_max']})")
