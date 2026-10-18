@@ -8,6 +8,8 @@ A  "plan"  — confirmed ATR_SM 4h Buys that pass the checks (not already +25% i
 B  "fast"  — 15m: EMA7 crosses above EMA21/50/200 and the candle closes above all four (coins >= $5M/day).
              10% margin, 5x. Stop -3%; exit when EMA7 drops below EMA21 (closed 15m candle) or at +8%; max 24h.
 
+Profit lock (both, since 2026-10-18): once a trade is +2%, the stop moves to +1%, then trails 2% under the best
+price, so a +2% move is never turned into a loss and big moves can still run to the target.
 Fees 0.055% of the position per side (Bybit taker). Funding is not included. Max 5 open trades per account,
 one per coin. Prices are checked about every 30 s (last traded price), so fills are approximate.
 State lives in data/paper.json.
@@ -26,6 +28,7 @@ PATH = scanner.DATA_DIR / "paper.json"
 START = 500.0
 FEE = 0.00055
 MAX_OPEN = 5
+LOCK_AT, LOCK_MIN, TRAIL = 0.02, 0.01, 0.02   # at +2% the stop goes to +1%, then follows 2% under the best price
 RULES = {
     "plan": {"name": "Plan · 4h ATR (3x)", "lev": 3, "margin": 0.10, "stop": 0.05, "tp1": 0.03, "tp2": 0.08, "max_h": 24},
     "fast": {"name": "Fast · 15m EMA (5x)", "lev": 5, "margin": 0.10, "stop": 0.03, "tp1": None, "tp2": 0.08, "max_h": 24},
@@ -113,9 +116,11 @@ def manage(s, px, fast_exit=None, now=None):
             if price is None:
                 keep.append(p); continue
             p["best"] = max(p.get("best", price), price)
+            if p["best"] >= p["entry"] * (1 + LOCK_AT):           # profit lock: never give back a +2% move
+                p["stop"] = max(p["stop"], p["entry"] * (1 + LOCK_MIN), p["best"] * (1 - TRAIL))
             done = False
             if price <= p["stop"]:
-                done = _close(acc, p, price, 1.0, "stop" if not p["half_done"] else "break-even stop", now)
+                done = _close(acc, p, price, 1.0, ("profit lock" if p["stop"] > p["entry"] else "stop") if not p["half_done"] else ("profit lock" if p["stop"] > p["entry"] else "break-even stop"), now)
             elif acc["tp1"] and not p["half_done"] and price >= p["entry"] * (1 + acc["tp1"]):
                 _close(acc, p, price, 0.5, "half at +3%", now)
                 p["half_done"], p["stop"] = True, p["entry"]

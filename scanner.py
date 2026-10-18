@@ -143,6 +143,7 @@ def load_candles(path):
         return None
     df["open_time"] = pd.to_datetime(df["open_time"], utc=True)
     df = df.set_index("open_time")
+    df = df[~df.index.duplicated(keep="last")].sort_index()  # two app copies can append the same candle
     full = pd.date_range(df.index[0], df.index[-1], freq="15min")
     df = df.reindex(full)
     df.index.name = "open_time"
