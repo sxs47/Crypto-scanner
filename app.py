@@ -39,6 +39,7 @@ import runpicks
 import spotflow
 import unlocks
 import paper
+import hotcoins
 
 import exchange
 import futures
@@ -1071,6 +1072,28 @@ def api_paper_reset():
     return jsonify({"ok": True})
 
 
+_hot = {"t": 0, "data": None}
+
+
+@app.get("/api/hot")
+def api_hot():
+    """Hot coins watchlist (hotcoins.py): traits that came before +30%-in-24h pumps. Recomputed at most once a minute."""
+    if time.time() - _hot["t"] > 60 or _hot["data"] is None:
+        with _lock:
+            frames = dict(_frames)
+        if not frames:
+            return jsonify({"ready": False})
+        states = (_rd.get("atrsig") or {}).get("states") or {}
+        rows = hotcoins.board(frames, states, min_score=4)
+        for r in rows:
+            r["lead"] = _rd.get("lead", {}).get(r["symbol"])
+            r["unlock"] = unlocks.next_big(r["symbol"])
+        _hot.update(t=time.time(), data=rows)
+    rows = [{k: clean(v) if isinstance(v, float) else v for k, v in r.items()} for r in _hot["data"]]
+    return jsonify({"ready": True, "board": rows, "checks": hotcoins.CHECKS, "coins": len(_frames),
+                    "market": (_rd.get("atrsig") or {}).get("market"), "now": time.time()})
+
+
 @app.get("/api/early")
 def api_early():
     if not _rd.get("atrsig") and not _pp["ready"]:
@@ -1383,6 +1406,9 @@ if __name__ == "__main__":
     if args.host not in ("127.0.0.1", "localhost") and not auth.enabled():
         sys.exit("Refusing to serve on a public address without a password. Run: python app.py --set-password")
 
+    if sys.platform == "win32":                # keep the PC from idle-sleeping while the app runs (closed lid still sleeps)
+        import ctypes
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)   # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
     load_frames()
     threading.Thread(target=_live_loop, daemon=True).start()
     threading.Thread(target=_live_prices_loop, daemon=True).start()
